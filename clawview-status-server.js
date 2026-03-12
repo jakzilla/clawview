@@ -169,6 +169,19 @@ const IDLE_TEXT_THRESHOLD_MS  = 60 * 60 * 1000;  // 1 hour
 
 // ─── Tool call → human text ──────────────────────────────────────────────────
 
+// Shared map for gog CLI subcommands → human strings.
+// Used by both the exec firstWord handler (shell: "gog gmail list") and the
+// 'gog' tool case (in case it appears as a named tool API call in future).
+// gog is a CLI tool (see skills/gog/SKILL.md) so the exec path is the real one.
+const GOG_SUBCOMMAND_MAP = {
+  gmail:    'Checking Gmail',
+  calendar: 'Checking calendar',
+  drive:    'Accessing Drive',
+  sheets:   'Working with Sheets',
+  docs:     'Working with Docs',
+  contacts: 'Checking contacts',
+};
+
 /**
  * Humanise a tool call name + arguments into a plain-English activity string.
  * Never returns raw tool names, file paths, or technical strings.
@@ -302,14 +315,7 @@ function humaniseToolCall(name, args) {
       // Google Workspace CLI
       if (firstWord === 'gog') {
         const sub = effective.split(/\s+/)[1] || '';
-        const gogCmdMap = {
-          gmail:    'Checking Gmail',
-          calendar: 'Checking calendar',
-          drive:    'Accessing Drive',
-          sheets:   'Working with Sheets',
-          docs:     'Working with Docs',
-        };
-        return gogCmdMap[sub] || 'Using Google Workspace';
+        return GOG_SUBCOMMAND_MAP[sub] || 'Using Google Workspace';
       }
 
       // File operations
@@ -348,35 +354,12 @@ function humaniseToolCall(name, args) {
       if (url) {
         try {
           const u = new URL(url);
-          return `Fetching ${u.hostname}${u.pathname.length > 1 ? u.pathname.slice(0, 30) : ''}`;
-        } catch (e) {}
+          const p = u.pathname.length > 1 ? u.pathname.slice(0, 30) : '';
+          return `Fetching ${u.hostname}${p}`;
+        } catch (e) { /* malformed URL — fall through to default */ }
       }
       return 'Fetching URL';
     }
-
-    // Google Workspace (gog CLI)
-    case 'gog': {
-      // gog is called with a subcommand in the args, or as a bare tool call
-      const sub = a.subcommand || a.command || '';
-      const gogMap = {
-        gmail:    'Checking Gmail',
-        calendar: 'Checking calendar',
-        drive:    'Accessing Drive',
-        sheets:   'Working with Sheets',
-        docs:     'Working with Docs',
-      };
-      return gogMap[sub] || 'Using Google Workspace';
-    }
-    case 'gog_gmail':
-    case 'gog-gmail': return 'Checking Gmail';
-    case 'gog_calendar':
-    case 'gog-calendar': return 'Checking calendar';
-    case 'gog_drive':
-    case 'gog-drive': return 'Accessing Drive';
-    case 'gog_sheets':
-    case 'gog-sheets': return 'Working with Sheets';
-    case 'gog_docs':
-    case 'gog-docs': return 'Working with Docs';
 
     // Messaging
     case 'message':
