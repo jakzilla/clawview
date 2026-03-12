@@ -346,8 +346,19 @@ function humaniseToolCall(name, args) {
       if (firstWord === 'rm' || firstWord === 'trash') return 'Removing files';
       if (firstWord === 'mkdir') return 'Creating directory';
       if (firstWord === 'ls' || firstWord === 'find') return 'Listing files';
-      if (firstWord === 'cat' || firstWord === 'head' || firstWord === 'tail') return 'Reading file';
-      if (firstWord === 'grep' || firstWord === 'rg') return 'Searching files';
+      if (firstWord === 'cat' || firstWord === 'head' || firstWord === 'tail') {
+        // #127 — extract filename for more specific activity ("Reading server.js" not "Reading file")
+        const fileArg = effective.split(/\s+/).slice(1).find(p => !p.startsWith('-') && p.length > 0);
+        const fname = fileArg ? path.basename(fileArg) : '';
+        return fname ? `Reading ${fname}` : 'Reading file';
+      }
+      if (firstWord === 'grep' || firstWord === 'rg') {
+        // #127 — show the file being searched when available
+        const parts = effective.split(/\s+/);
+        const fileArg = parts.slice(1).find(p => !p.startsWith('-') && p.length > 0 && p !== parts[1]);
+        const fname = fileArg ? path.basename(fileArg) : '';
+        return fname ? `Searching ${fname}` : 'Searching files';
+      }
       if (firstWord === 'open') return 'Opening application';
 
       // System
@@ -394,14 +405,9 @@ function humaniseToolCall(name, args) {
     case 'sessions_spawn':
     case 'subagents_spawn':
     case 'spawn': {
-      const task = a.task || '';
-      if (!task) return 'Spawning sub-agent';
-      // Extract a clean label from "You are X..." or "Task: X..."
-      const youAreMatch = task.match(/You are ([^,\.]+)/i);
-      const taskMatch = task.match(/[Tt]ask:\s*([^.]+)/);
-      if (youAreMatch) return `Delegating to ${youAreMatch[1].trim().slice(0, 40)}`;
-      if (taskMatch) return `Spawning: ${taskMatch[1].trim().slice(0, 40)}`;
-      return 'Spawning sub-agent';
+      // #133 — "Delegating to X" / "Spawning sub-agent" is internal orchestration noise.
+      // Return null so the caller falls back to assistant text (which is more meaningful).
+      return null;
     }
 
     // Memory / notes
@@ -416,9 +422,10 @@ function humaniseToolCall(name, args) {
       return 'Managing process';
     }
 
-    // Catch-all — never show the raw tool name
+    // Catch-all — never show the raw tool name or "Working..." (#124)
+    // Return null so callers can choose a better fallback (e.g. assistant text)
     default:
-      return 'Working...';
+      return null;
   }
 }
 
@@ -453,6 +460,16 @@ function cleanActivityText(raw) {
     .replace(/\s+/g, ' ')
     .trim();
 
+  // ── Pre-processing: strip markdown/URLs BEFORE blacklist checks (#123) ──
+  // Markdown links start with '[' which would falsely trigger the JSON-array
+  // blacklist below if not converted first.
+
+  // Strip Markdown links: [text](url) → text
+  text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+
+  // Strip bare URLs — https://... or http://...
+  text = text.replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim();
+
   // Must be meaningful length — filters out single words and tiny fragments
   if (text.length < 15) return null;
 
@@ -461,7 +478,7 @@ function cleanActivityText(raw) {
   // Bare file path (starts with /, ~/, or ./)
   if (/^(?:\/|~\/|\.\/)/.test(text)) return null;
 
-  // JSON object or array
+  // JSON object or array ('[' now only matches real JSON arrays — markdown links stripped above)
   if (text.startsWith('{') || text.startsWith('[')) return null;
 
   // Looks like a URL
@@ -476,9 +493,15 @@ function cleanActivityText(raw) {
   // Purely numeric or symbol noise
   if (/^[\d\s\-_=.,:;!?]+$/.test(text)) return null;
 
+  // ── Blacklist: internal orchestration noise (#133) ──────────────────────
+  if (/^Delegating to /i.test(text)) return null;
+  if (/^Spawning (sub-?agent|subagent)/i.test(text)) return null;
+
   // Use only the first sentence for display — take the leading thought, not a paragraph
   const firstSentence = text.split(/(?<=[.!?])\s+[A-Z]|(?<=\.)\s+I\s/)[0].trim();
-  text = (firstSentence.length >= 15 ? firstSentence : text).slice(0, 120).trim();
+  // #122 — server should not truncate; Swift UI handles display truncation.
+  // Raised from 120 → 300 chars to preserve full context for the client.
+  text = (firstSentence.length >= 15 ? firstSentence : text).slice(0, 300).trim();
 
   // Capitalise first letter
   if (text.length > 0) {
@@ -601,10 +624,10 @@ function parseSessionFile(sessionFile) {
         // because they come from the humaniseToolCall mapper which has full context.
         // Assistant text may still be conversational even after filtering.
         //
-        // Exception: if the tool call is generic ("Working...") AND we have meaningful
-        // assistant text, use the text instead.
+        // Exception: if the tool call is null/generic AND we have meaningful
+        // assistant text, use the text instead. (#124: "Working..." never emitted)
         if (!foundActivity) {
-          const isGenericToolCall = messageToolCall === 'Working...' || messageToolCall === 'Running command';
+          const isGenericToolCall = !messageToolCall || messageToolCall === 'Running command';
           if (messageToolCall && !isGenericToolCall) {
             // Specific, humanised tool call — most reliable signal
             result.activityText = messageToolCall;
@@ -844,7 +867,9 @@ function getAgentStatusV2(agentId) {
   }
 
   if ((wasRecentlyActive || agentReportedActive) && !activityText) {
-    activityText = 'Working...';
+    // #124 — never emit "Working..." — it is meaningless to the user.
+    // "Active" signals something is happening without pretending to know what.
+    activityText = 'Active';
     activityType = 'unknown';
   } else if (!wasRecentlyActive && !agentReportedActive) {
     const hoursAgo = Math.floor(activityAgeMs / 3600000);
@@ -865,7 +890,10 @@ function getAgentStatusV2(agentId) {
   // Zero means the Gateway didn't populate cost (common for subagent sessions).
   let costUsd = parsed.cost;
   if ((costUsd === null || costUsd === 0) && bestSession.inputTokens) {
-    // Rough estimate: claude-4-x pricing ~$3/M input, ~$15/M output
+    // Rough token-based estimate using claude-4.x (claude-sonnet-4-6) pricing.
+    // Last verified: 2026-03-12. TODO: update when Anthropic changes pricing.
+    // Current rates: $3/M input, $15/M output, $0.30/M cache-read, $3.75/M cache-write.
+    // Source: https://www.anthropic.com/pricing
     const inputCost = (bestSession.inputTokens || 0) / 1_000_000 * 3.0;
     const outputCost = (bestSession.outputTokens || 0) / 1_000_000 * 15.0;
     const cacheReadCost = (bestSession.cacheRead || 0) / 1_000_000 * 0.30;
