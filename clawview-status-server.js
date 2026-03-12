@@ -518,7 +518,10 @@ function parseSessionFile(sessionFile) {
 
     const lines = buf.toString('utf8').split('\n').filter(l => l.trim());
 
-    // Also get the first line for session start time
+    // For large sessions: read the first line separately to get the true session start time.
+    // The backwards scan only sees the last 32KB, so the earliest entry in that window
+    // is NOT the real start. This dedicated read gives the correct sessionStartedAt. (#90)
+    let sessionStartSetFromDedicatedRead = false;
     if (stat.size > readSize) {
       try {
         const startBuf = Buffer.alloc(512);
@@ -529,6 +532,7 @@ function parseSessionFile(sessionFile) {
         const firstEntry = JSON.parse(firstLine);
         if (firstEntry.timestamp) {
           result.sessionStartedAt = new Date(firstEntry.timestamp).toISOString();
+          sessionStartSetFromDedicatedRead = true;
         }
       } catch (e) {}
     }
@@ -637,8 +641,12 @@ function parseSessionFile(sessionFile) {
           }
         }
 
-        // Set sessionStartedAt from first-pass scan (we're going backwards so last one wins = earliest)
-        if (ts > 0 && (!result.sessionStartedAt || ts < new Date(result.sessionStartedAt).getTime())) {
+        // Set sessionStartedAt from backwards scan ONLY for small sessions (fits in 32KB).
+        // For large sessions, sessionStartSetFromDedicatedRead=true — the 512-byte start
+        // buffer already read the true session start. Don't override it with an entry
+        // from the middle of the session. (#90)
+        if (!sessionStartSetFromDedicatedRead && ts > 0 &&
+            (!result.sessionStartedAt || ts < new Date(result.sessionStartedAt).getTime())) {
           result.sessionStartedAt = new Date(ts).toISOString();
         }
       }
