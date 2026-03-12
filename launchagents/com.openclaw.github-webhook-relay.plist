@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.openclaw.github-webhook-relay</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Volumes/Storage/projects/clawview/github-webhook-relay.js</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>DISCORD_TOKEN</key>
+    <string>REPLACE_WITH_DISCORD_TOKEN</string>
+    <key>GITHUB_WEBHOOK_SECRET</key>
+    <string>REPLACE_WITH_WEBHOOK_SECRET</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/github-webhook-relay.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/github-webhook-relay.log</string>
+</dict>
+</plist>
