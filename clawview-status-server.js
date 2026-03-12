@@ -224,7 +224,12 @@ function humaniseToolCall(name, args) {
       //   - Command subst:     VAR="$(security find...)" — may contain spaces inside quotes
       // Strategy: consume one assignment token at a time from the left.
       function stripEnvVars(str) {
-        const envVarRe = /^[A-Z_][A-Z0-9_]*=(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\S+)\s*/;
+        // Value alternatives (in order):
+        //   "..."        — double-quoted (may contain spaces, escaped chars)
+        //   '...'        — single-quoted (may contain spaces, escaped chars)
+        //   $(...)       — unquoted command substitution (may contain spaces)
+        //   \S+          — unquoted simple value (no spaces)
+        const envVarRe = /^[A-Z_][A-Z0-9_]*=(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\$\([^)]*\)|\S+)\s*/;
         let s = str;
         let prev;
         do {
