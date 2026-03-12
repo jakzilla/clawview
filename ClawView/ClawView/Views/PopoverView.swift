@@ -215,7 +215,10 @@ struct DisconnectedView: View {
                 .foregroundColor(Color(NSColor.tertiaryLabelColor))
 
             VStack(spacing: 6) {
-                Text("Can't reach your Mac mini")
+                // Use configured host rather than hardcoded "Mac mini" (#35)
+                // gateway.host is the address the user configured; empty means not yet set.
+                let hostLabel = gateway.host.isEmpty ? "OpenClaw" : gateway.host
+                Text("Can't reach \(hostLabel)")
                     .font(.headline)
                     .foregroundColor(.primary)
                     .multilineTextAlignment(.center)
