@@ -644,13 +644,21 @@ function getAgentStatusV2(agentId) {
   const agentDir = path.join(AGENTS_DIR, agentId);
   const sessionsFile = path.join(agentDir, 'sessions', 'sessions.json');
 
-  if (!fs.existsSync(sessionsFile)) return null;
-
-  let sessions;
-  try {
-    sessions = JSON.parse(fs.readFileSync(sessionsFile, 'utf8'));
-  } catch (e) {
-    return null;
+  // ── Issue #95: Don't return null for agents with no sessions.json ────────────
+  // An agent that has never been directly activated (e.g. Demis/research) has no
+  // sessions.json, but it's still a real agent. It should appear as idle rather
+  // than be silently absent from the API response.
+  // We still check main's subagent sessions before deciding — the agent may be
+  // active right now via a spawned subagent even if it has no direct session history.
+  let sessions = {};
+  if (fs.existsSync(sessionsFile)) {
+    try {
+      // Guard: JSON.parse can return null/string/array — ensure we always have a plain object.
+      // Object.entries(null) throws TypeError; || {} prevents that edge case.
+      sessions = JSON.parse(fs.readFileSync(sessionsFile, 'utf8')) || {};
+    } catch (e) {
+      // Corrupted sessions.json — treat as empty, agent will show idle
+    }
   }
 
   // Find the most recently updated session regardless of type.
@@ -683,9 +691,38 @@ function getAgentStatusV2(agentId) {
     }
   }
 
-  if (!bestSession || !bestKey) return null;
-
+  // If no session found at all (no sessions.json, no subagent session), return a stub
+  // idle entry so the agent still appears in the UI rather than being silently absent.
+  // This is the fix for issue #95 (Demis never appeared until first activation).
   const now = Date.now();
+  if (!bestSession || !bestKey) {
+    return {
+      session_key: null,
+      agent_id: agentId,
+      display_name: meta.name,
+      emoji: meta.emoji,
+      role: meta.role,
+      status: 'idle',
+      activity: 'Idle — never activated',
+      activity_type: 'stale',
+      activity_since_seconds: 0,
+      last_activity_at: new Date(0).toISOString(),
+      session_started_at: null,
+      discord_channel_id: meta.channel,
+      sub_agents: [],
+      cost_usd: null,
+      // V1 compat fields
+      id: agentId,
+      name: meta.name,
+      health: 'idle',
+      duration_seconds: 0,
+      last_activity: new Date(0).toISOString(),
+      channel: meta.channel,
+      cost: null,
+      _recentActivity: [],
+    };
+  }
+
   const sessionAgeMsFromUpdatedAt = now - bestUpdatedAt;
 
   // Parse the session file for detailed activity
