@@ -1,18 +1,19 @@
 import Cocoa
 
 // MARK: - Menu Bar Icon Manager
-// Handles the NSStatusItem and icon state/animation in AppKit.
+// Handles the NSStatusItem and icon state in AppKit.
+// Exactly two states (#67):
+//   .connected    — gateway reachable → solid white (template, macOS handles dark/light)
+//   .disconnected — gateway unreachable → solid red
 
 class MenuBarIconController: NSObject {
     var statusItem: NSStatusItem?
-    private var badgeLayer: CALayer?
 
+    /// Exactly two visible states (#67). All other conditions (active agents,
+    /// stuck agents, warnings) are reflected in the popover — not the icon.
     enum IconState {
-        case idle           // Connected, nothing running
-        case working        // Active agents
-        case attention      // Warning — taking too long
-        case error          // Error or stuck agent
-        case disconnected   // Can't reach gateway
+        case connected      // Gateway reachable — solid white template icon
+        case disconnected   // Gateway unreachable — solid red icon
     }
 
     private var currentState: IconState = .disconnected
@@ -24,7 +25,6 @@ class MenuBarIconController: NSObject {
 
         guard let button = statusItem?.button else { return }
         button.image = menuBarImage(for: .disconnected)
-        button.image?.isTemplate = true
         button.imageScaling = .scaleProportionallyUpOrDown
     }
 
@@ -42,97 +42,70 @@ class MenuBarIconController: NSObject {
     private func applyState(_ state: IconState) {
         guard let button = statusItem?.button else { return }
 
-        removeBadge()
+        let img = menuBarImage(for: state)
+        button.image = img
+        button.alphaValue = 1.0
 
         switch state {
-        case .idle:
-            button.image = menuBarImage(for: .idle)
+        case .connected:
+            // Template image — macOS renders as white in dark menu bar, black in light (#67)
             button.image?.isTemplate = true
-            button.alphaValue = 1.0
-
-        case .working:
-            // Static icon — no pulse/animation (#65)
-            button.image = menuBarImage(for: .working)
-            button.image?.isTemplate = true
-            button.alphaValue = 1.0
-
-        case .attention:
-            button.image = menuBarImage(for: .attention)
-            button.image?.isTemplate = true
-            button.alphaValue = 1.0
-            addBadge(color: NSColor.systemYellow, to: button)
-
-        case .error:
-            button.image = menuBarImage(for: .error)
-            button.image?.isTemplate = true
-            button.alphaValue = 1.0
-            addBadge(color: NSColor.systemRed, to: button)
 
         case .disconnected:
-            button.image = menuBarImage(for: .disconnected)
+            // Non-template red image (#67) — gateway is gone, user needs to notice
             button.image?.isTemplate = false
-            // Template false so we can control alpha manually
-            button.image = dimmedImage(menuBarImage(for: .disconnected))
-            button.alphaValue = 0.4
         }
-    }
-
-    // MARK: - Badge Layer
-
-    private func addBadge(color: NSColor, to button: NSStatusBarButton) {
-        guard let layer = button.layer else { return }
-
-        removeBadge()
-
-        let badge = CALayer()
-        let badgeDiameter: CGFloat = 6
-        let inset: CGFloat = 1
-
-        // Position: top-right of button
-        let buttonBounds = button.bounds
-        badge.frame = CGRect(
-            x: buttonBounds.width - badgeDiameter - inset,
-            y: buttonBounds.height - badgeDiameter - inset,
-            width: badgeDiameter,
-            height: badgeDiameter
-        )
-        badge.cornerRadius = badgeDiameter / 2
-        badge.backgroundColor = color.cgColor
-
-        // White ring (punches out from menu bar)
-        badge.borderColor = NSColor.windowBackgroundColor.cgColor
-        badge.borderWidth = 1.0
-
-        layer.addSublayer(badge)
-        badgeLayer = badge
-    }
-
-    private func removeBadge() {
-        badgeLayer?.removeFromSuperlayer()
-        badgeLayer = nil
     }
 
     // MARK: - Image Generation
 
+    /// Returns the menu bar image for the given state.
+    /// Connected → trimmed template image (white/black per OS)
+    /// Disconnected → trimmed red-tinted image
     private func menuBarImage(for state: IconState) -> NSImage {
-        // Use the custom claw asset from the asset catalogue.
-        // Template rendering intent is set in Contents.json so macOS handles
-        // light/dark mode automatically when isTemplate = true.
-        if let image = NSImage(named: "MenuBarIcon") {
-            // Trim horizontal whitespace so the claw fills the canvas cleanly (#66).
-            // The source asset has excess horizontal padding; trimmedToContent()
-            // finds the tightest bounding box of non-transparent pixels and
-            // re-renders the claw centred in an 18×18pt square.
-            return trimmedToContent(image, targetSize: NSSize(width: 18, height: 18))
+        // Load and trim the source claw asset (#66)
+        let baseImage: NSImage
+        if let asset = NSImage(named: "MenuBarIcon") {
+            baseImage = trimmedToContent(asset, targetSize: NSSize(width: 18, height: 18))
+        } else {
+            baseImage = drawFallbackIcon()
         }
 
-        // Fallback: draw a simple claw icon programmatically
-        return drawFallbackIcon()
+        switch state {
+        case .connected:
+            baseImage.isTemplate = true
+            return baseImage
+
+        case .disconnected:
+            // Tint the claw solid red — draw it with systemRed fill (#67)
+            return tintedImage(baseImage, color: NSColor.systemRed)
+        }
+    }
+
+    /// Returns a copy of `image` with all opaque pixels replaced by `color`.
+    /// Used to produce the solid red disconnected icon (#67).
+    private func tintedImage(_ image: NSImage, color: NSColor) -> NSImage {
+        let size = image.size
+        let result = NSImage(size: size)
+        result.lockFocus()
+
+        // Draw the image as a mask, then apply the tint colour
+        image.draw(in: NSRect(origin: .zero, size: size),
+                   from: .zero,
+                   operation: .sourceOver,
+                   fraction: 1.0)
+
+        color.setFill()
+        NSRect(origin: .zero, size: size).fill(using: .sourceAtop)
+
+        result.unlockFocus()
+        result.isTemplate = false
+        return result
     }
 
     /// Crops `source` to the tightest bounding box of opaque pixels,
     /// then scales the result to fit within `targetSize` with equal margins
-    /// on all sides (at most 1pt padding). This removes horizontal whitespace
+    /// on all sides (at most 1pt padding). Removes horizontal whitespace
     /// baked into the source asset (#66).
     private func trimmedToContent(_ source: NSImage, targetSize: NSSize) -> NSImage {
         // Work at 2x for precision
@@ -218,11 +191,6 @@ class MenuBarIconController: NSObject {
         return result
     }
 
-    private func dimmedImage(_ image: NSImage) -> NSImage {
-        // Return the image as-is; we control alpha via button.alphaValue
-        return image
-    }
-
     private func drawFallbackIcon() -> NSImage {
         let size = NSSize(width: 18, height: 18)
         let image = NSImage(size: size)
@@ -253,21 +221,18 @@ class MenuBarIconController: NSObject {
 
     // MARK: - Derived State from GatewayService
 
+    /// Maps gateway connection state to the two-state icon model (#67).
+    /// Connected = any reachable state (local network or tunnel).
+    /// Disconnected = gateway unreachable or error.
+    /// All intermediate states (working, stuck, warning) are displayed
+    /// in the popover only — not reflected in the icon.
     @MainActor func updateFromGateway(_ gateway: GatewayService) {
         let newState: IconState
         switch gateway.connectionState {
         case .disconnected, .error:
             newState = .disconnected
         case .localNetwork, .sshTunnel:
-            if gateway.hasStuckAgents {
-                newState = .error
-            } else if gateway.hasWarningAgents {
-                newState = .attention
-            } else if !gateway.activeAgents.isEmpty {
-                newState = .working
-            } else {
-                newState = .idle
-            }
+            newState = .connected
         }
         setState(newState)
     }
