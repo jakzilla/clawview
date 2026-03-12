@@ -66,7 +66,7 @@ class MenuBarIconController: NSObject {
         // Load and trim the source claw asset (#66)
         let baseImage: NSImage
         if let asset = NSImage(named: "MenuBarIcon") {
-            baseImage = trimmedToContent(asset, targetSize: NSSize(width: 18, height: 18))
+            baseImage = trimmedToContent(asset, targetSize: NSSize(width: 14, height: 18))
         } else {
             baseImage = drawFallbackIcon()
         }
