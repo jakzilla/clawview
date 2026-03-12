@@ -145,11 +145,32 @@ struct AgentCardView: View {
         }
     }
 
+    /// Cached DateFormatter for the ≥7-day branch of relativeTime.
+    /// Static to avoid recreating the expensive object on every call (#31).
+    private static let shortDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        return f
+    }()
+
+    /// Returns a human-readable relative time string for display in agent cards (#31).
+    ///
+    /// Scale:
+    ///   < 60s      → "just now"
+    ///   < 60m      → "Xm ago"
+    ///   < 24h      → "Xh ago"
+    ///   1 day      → "yesterday"
+    ///   < 7 days   → "X days ago"
+    ///   ≥ 7 days   → "MMM d" (e.g. "Mar 10")
     private func relativeTime(_ date: Date) -> String {
         let elapsed = Int(Date().timeIntervalSince(date))
         if elapsed < 60 { return "just now" }
         if elapsed < 3600 { return "\(elapsed / 60)m ago" }
-        return "\(elapsed / 3600)h ago"
+        if elapsed < 86400 { return "\(elapsed / 3600)h ago" }
+        let days = elapsed / 86400
+        if days == 1 { return "yesterday" }
+        if days < 7 { return "\(days) days ago" }
+        return AgentCardView.shortDateFormatter.string(from: date)
     }
 }
 
