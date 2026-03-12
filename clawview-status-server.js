@@ -687,10 +687,12 @@ function getAgentStatusV2(agentId) {
   let agentReportedActive = false;
   let agentReportedActivity = null;
   let agentReportedActivityType = null;
+  let statusFileTs = 0; // timestamp of the .status file write
   if (fs.existsSync(statusFile)) {
     try {
       const statusData = JSON.parse(fs.readFileSync(statusFile, 'utf8'));
-      const statusAge = now - new Date(statusData.timestamp || 0).getTime();
+      statusFileTs = new Date(statusData.timestamp || 0).getTime();
+      const statusAge = now - statusFileTs;
       const state = statusData.state || 'active';
       if (statusData.activity && statusAge < STATUS_FILE_ACTIVE_MAX_MS) {
         agentReportedActivity = statusData.activity;
@@ -715,13 +717,18 @@ function getAgentStatusV2(agentId) {
 
   // ── Activity text ──────────────────────────────────────────────────────────
   // Priority:
-  // 1. agent_reported (not yet implemented — placeholder for future .status file)
+  // 1. agent_reported (.status file) — ONLY if .status is fresher than session activity.
+  //    If the session has newer activity (agent moved on from the initial task), prefer that.
   // 2. tool_call from session file (humanised)
   // 3. inferred from last assistant text
   // 4. stale / idle fallback
-  // Activity text: agent self-reported wins over parsed session content
-  let activityText = agentReportedActivity || parsed.activityText;
-  let activityType = agentReportedActivityType || parsed.activityType;
+  //
+  // The .status file goes stale mid-task (#89): agents write it at task start/end only.
+  // When session activity is newer than the .status write, the session is more accurate.
+  const sessionActivityMs = lastActivityMs; // most recent session event timestamp
+  const statusIsNewer = statusFileTs > 0 && statusFileTs >= sessionActivityMs;
+  let activityText = (agentReportedActivity && statusIsNewer) ? agentReportedActivity : (parsed.activityText || agentReportedActivity);
+  let activityType = (agentReportedActivity && statusIsNewer) ? agentReportedActivityType : (parsed.activityType || agentReportedActivityType);
 
   if ((wasRecentlyActive || agentReportedActive) && !activityText) {
     activityText = 'Working...';
