@@ -54,39 +54,56 @@ const AGENT_NAMES_PATTERN = new RegExp(
 /**
  * Read the first user message from a session JSONL file and extract the agent
  * name from "You are <Name>" patterns. Returns the agent ID string or null.
+ *
+ * Reads in 32KB chunks. A "carry" buffer retains the last incomplete line
+ * from each chunk and prepends it to the next, so no JSONL line is split
+ * across chunk boundaries. Returns on the first user message found.
  */
 function getSubagentOwner(sessionFile) {
   if (!sessionFile || !fs.existsSync(sessionFile)) return null;
+  const CHUNK_SIZE = 32768;  // 32KB per chunk
   let fd = null;
   try {
     fd = fs.openSync(sessionFile, 'r');
-    const buf = Buffer.alloc(65536); // first 64KB — skills preamble alone can be 40KB+, "You are Steve" appears after that
-    const bytesRead = fs.readSync(fd, buf, 0, 65536, 0);
-    fs.closeSync(fd);
-    fd = null; // prevent double-close in finally
-    const text = buf.slice(0, bytesRead).toString('utf8');
-    const lines = text.split('\n');
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      let entry;
-      try { entry = JSON.parse(line); } catch (e) { continue; }
-      if (entry.type !== 'message') continue;
-      const msg = entry.message || {};
-      if (msg.role !== 'user') continue;
-      const content = msg.content;
-      let taskText = '';
-      if (Array.isArray(content)) {
-        taskText = (content.find(c => c.type === 'text') || {}).text || '';
-      } else if (typeof content === 'string') {
-        taskText = content;
+    const fileSize = fs.fstatSync(fd).size;
+    let offset = 0;
+    let carry  = '';  // partial last line carried over from previous chunk
+
+    while (offset < fileSize) {
+      const readSize = Math.min(CHUNK_SIZE, fileSize - offset);
+      const buf = Buffer.alloc(readSize);
+      const bytesRead = fs.readSync(fd, buf, 0, readSize, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+
+      const chunkText = carry + buf.slice(0, bytesRead).toString('utf8');
+      const lines = chunkText.split('\n');
+
+      // If not at EOF, the last element may be an incomplete line — carry it forward.
+      carry = (offset < fileSize) ? lines.pop() : '';
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        let entry;
+        try { entry = JSON.parse(line); } catch (e) { continue; }
+        if (entry.type !== 'message') continue;
+        const msg = entry.message || {};
+        if (msg.role !== 'user') continue;
+        const content = msg.content;
+        let taskText = '';
+        if (Array.isArray(content)) {
+          taskText = (content.find(c => c.type === 'text') || {}).text || '';
+        } else if (typeof content === 'string') {
+          taskText = content;
+        }
+        // Match "You are Linus", "You are Steve", etc. (pattern derived from AGENT_NAME_TO_ID)
+        const m = taskText.match(AGENT_NAMES_PATTERN);
+        if (m) {
+          return AGENT_NAME_TO_ID[m[1]] || null;
+        }
+        // Only need the first user message — stop after processing it
+        return null;
       }
-      // Match "You are Linus", "You are Steve", etc. (pattern derived from AGENT_NAME_TO_ID)
-      const m = taskText.match(AGENT_NAMES_PATTERN);
-      if (m) {
-        return AGENT_NAME_TO_ID[m[1]] || null;
-      }
-      // Only need the first user message
-      break;
     }
   } catch (e) {
     // Ignore read errors (file may be locked or truncated)
