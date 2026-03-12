@@ -668,10 +668,28 @@ function getAgentStatusV2(agentId) {
   // is still shown as idle — it has a session but hasn't done anything meaningful.
 
   const wasRecentlyActive = activityAgeMs < ACTIVE_WINDOW_MS;
-  // Status is determined by session recency alone — not by whether we parsed text.
-  // session.updatedAt is the reliable signal. Parsed text is best-effort display detail.
-  // An agent whose session was touched in the last 2 minutes is active, period.
-  const status = wasRecentlyActive ? 'active' : 'idle';
+
+  // Check .status file BEFORE setting final status — agent self-report overrides session recency
+  const STATUS_FILE_ACTIVE_MAX_MS = 30 * 60 * 1000;
+  const statusFile = path.join(agentDir, '.status');
+  let agentReportedActive = false;
+  let agentReportedActivity = null;
+  let agentReportedActivityType = null;
+  if (fs.existsSync(statusFile)) {
+    try {
+      const statusData = JSON.parse(fs.readFileSync(statusFile, 'utf8'));
+      const statusAge = now - new Date(statusData.timestamp || 0).getTime();
+      const state = statusData.state || 'active';
+      if (statusData.activity && statusAge < STATUS_FILE_ACTIVE_MAX_MS) {
+        agentReportedActivity = statusData.activity;
+        agentReportedActivityType = 'agent_reported';
+        if (state === 'active') agentReportedActive = true;
+      }
+    } catch (e) {}
+  }
+
+  // Status: agent self-report wins, then session recency, then idle
+  const status = (agentReportedActive || wasRecentlyActive) ? 'active' : 'idle';
 
   // Health — only "stuck" if agent was active AND has gone suspiciously quiet
   let health = 'normal';
@@ -689,47 +707,14 @@ function getAgentStatusV2(agentId) {
   // 2. tool_call from session file (humanised)
   // 3. inferred from last assistant text
   // 4. stale / idle fallback
-  let activityText = parsed.activityText;
-  let activityType = parsed.activityType;
+  // Activity text: agent self-reported wins over parsed session content
+  let activityText = agentReportedActivity || parsed.activityText;
+  let activityType = agentReportedActivityType || parsed.activityType;
 
-  // Check for .status file (agent self-reported activity)
-  // Format: {"timestamp": ISO, "activity": "what I'm doing", "state": "active"|"idle"|"done"}
-  // - state "active": trust the activity text for up to 30 minutes (covers long tasks)
-  // - state "idle" or "done": immediately override — agent says it's finished
-  // - no state field: treat as active if < 2min old (legacy compat)
-  const STATUS_FILE_ACTIVE_MAX_MS = 30 * 60 * 1000; // trust "active" state for 30 min
-  const statusFile = path.join(agentDir, '.status');
-  if (fs.existsSync(statusFile)) {
-    try {
-      const statusData = JSON.parse(fs.readFileSync(statusFile, 'utf8'));
-      const statusAge = now - new Date(statusData.timestamp || 0).getTime();
-      const state = statusData.state || 'active';
-      if (statusData.activity) {
-        if ((state === 'idle' || state === 'done')) {
-          // Agent explicitly marked itself done — use as activity text but don't force active
-          if (statusAge < STATUS_FILE_ACTIVE_MAX_MS) {
-            activityText = statusData.activity;
-            activityType = 'agent_reported';
-          }
-        } else if (state === 'active' && statusAge < STATUS_FILE_ACTIVE_MAX_MS) {
-          // Agent is actively working — trust this text and force active status
-          activityText = statusData.activity;
-          activityType = 'agent_reported';
-          // Override wasRecentlyActive so this agent shows as active even if session
-          // updatedAt is slightly stale (e.g. agent writing status between tool calls)
-          // We deliberately do NOT override `status` here — that was set above.
-          // Instead the .status file's "active" state is a strong hint used for display.
-        }
-      }
-    } catch (e) {}
-  }
-
-  if (wasRecentlyActive && !activityText) {
-    // Active but text extraction failed — show a neutral fallback, not "idle"
+  if ((wasRecentlyActive || agentReportedActive) && !activityText) {
     activityText = 'Working...';
     activityType = 'unknown';
-  } else if (!wasRecentlyActive) {
-    // Idle fallback
+  } else if (!wasRecentlyActive && !agentReportedActive) {
     const hoursAgo = Math.floor(activityAgeMs / 3600000);
     const minsAgo = Math.floor(activityAgeMs / 60000);
     if (activityAgeMs > IDLE_TEXT_THRESHOLD_MS) {
