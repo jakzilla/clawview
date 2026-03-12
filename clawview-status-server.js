@@ -299,6 +299,19 @@ function humaniseToolCall(name, args) {
         return ghMap[`${sub} ${sub2}`] || ghMap[sub] || 'Running gh';
       }
 
+      // Google Workspace CLI
+      if (firstWord === 'gog') {
+        const sub = effective.split(/\s+/)[1] || '';
+        const gogCmdMap = {
+          gmail:    'Checking Gmail',
+          calendar: 'Checking calendar',
+          drive:    'Accessing Drive',
+          sheets:   'Working with Sheets',
+          docs:     'Working with Docs',
+        };
+        return gogCmdMap[sub] || 'Using Google Workspace';
+      }
+
       // File operations
       if (firstWord === 'cp') return 'Copying files';
       if (firstWord === 'mv') return 'Moving files';
@@ -323,13 +336,47 @@ function humaniseToolCall(name, args) {
       return 'Running command';
     }
 
-    // Web / search
+    // Web / search / fetch
     case 'web_search':
     case 'search':
     case 'brave_search': {
       const q = a.query || a.q || '';
       return q ? `Searching: ${q.slice(0, 40)}` : 'Searching the web';
     }
+    case 'web_fetch': {
+      const url = a.url || '';
+      if (url) {
+        try {
+          const u = new URL(url);
+          return `Fetching ${u.hostname}${u.pathname.length > 1 ? u.pathname.slice(0, 30) : ''}`;
+        } catch (e) {}
+      }
+      return 'Fetching URL';
+    }
+
+    // Google Workspace (gog CLI)
+    case 'gog': {
+      // gog is called with a subcommand in the args, or as a bare tool call
+      const sub = a.subcommand || a.command || '';
+      const gogMap = {
+        gmail:    'Checking Gmail',
+        calendar: 'Checking calendar',
+        drive:    'Accessing Drive',
+        sheets:   'Working with Sheets',
+        docs:     'Working with Docs',
+      };
+      return gogMap[sub] || 'Using Google Workspace';
+    }
+    case 'gog_gmail':
+    case 'gog-gmail': return 'Checking Gmail';
+    case 'gog_calendar':
+    case 'gog-calendar': return 'Checking calendar';
+    case 'gog_drive':
+    case 'gog-drive': return 'Accessing Drive';
+    case 'gog_sheets':
+    case 'gog-sheets': return 'Working with Sheets';
+    case 'gog_docs':
+    case 'gog-docs': return 'Working with Docs';
 
     // Messaging
     case 'message':
