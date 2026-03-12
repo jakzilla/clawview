@@ -199,7 +199,8 @@ struct ExpandedAgentDetail: View {
                                 Text(entry.formattedTime)
                                     .font(.system(.caption, design: .monospaced))
                                     .foregroundColor(Color(NSColor.tertiaryLabelColor))
-                                    .frame(width: 40, alignment: .leading)
+                                    // Width 72: fits "Yest HH:mm" (9 chars) and "MMM d HH:mm" (11 chars) (#32)
+                                    .frame(width: 72, alignment: .leading)
 
                                 // cleanedText is non-nil for every entry in filteredRecentActivity
                                 Text(entry.cleanedText ?? entry.text)

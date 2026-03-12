@@ -93,11 +93,37 @@ struct RecentActivityEntry: Identifiable, Codable {
         try container.encode(text, forKey: .text)
     }
 
-    /// Human-readable "HH:mm" from the entry's timestamp
+    // MARK: - Cached formatters for formattedTime (#32)
+
+    private static let timeOnlyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
+    private static let shortDateTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d HH:mm"
+        return f
+    }()
+
+    /// Human-readable timestamp for an activity entry (#32).
+    ///
+    /// - Same day:   "HH:mm"           (e.g. "14:32")
+    /// - Yesterday:  "Yest HH:mm"      (e.g. "Yest 18:31")
+    /// - Older:      "MMM d HH:mm"     (e.g. "Mar 10 18:31")
+    ///
+    /// Entries from previous days are now clearly distinguishable from today's
+    /// entries — Jack won't mistake yesterday's activity for something recent.
     var formattedTime: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter.string(from: time)
+        let calendar = Calendar.current
+        if calendar.isDateInToday(time) {
+            return RecentActivityEntry.timeOnlyFormatter.string(from: time)
+        } else if calendar.isDateInYesterday(time) {
+            return "Yest " + RecentActivityEntry.timeOnlyFormatter.string(from: time)
+        } else {
+            return RecentActivityEntry.shortDateTimeFormatter.string(from: time)
+        }
     }
 
     /// Returns a display-quality version of the activity text, or `nil` if the
