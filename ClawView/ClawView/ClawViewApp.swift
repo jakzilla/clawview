@@ -25,6 +25,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var popover: NSPopover?
     var eventMonitor: Any?
 
+    /// Floating panel for the detached/pinned mode (#63).
+    var floatingPanel: NSPanel?
+    /// Tracks whether the popover is currently detached as a floating panel (#63).
+    var isPinned: Bool = false
+
     let gateway = GatewayService.shared
     let connectionManager = ConnectionManager()
     let iconController = MenuBarIconController()
@@ -73,7 +78,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let popoverView = PopoverView(
             gateway: gateway,
-            connectionManager: connectionManager
+            connectionManager: connectionManager,
+            isPinned: false,
+            onPinToggled: { [weak self] in
+                Task { @MainActor [weak self] in self?.togglePin() }
+            }
         )
         popover.contentViewController = NSHostingController(rootView: popoverView)
         self.popover = popover
@@ -166,6 +175,112 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func closePopover() {
         popover?.performClose(nil)
+    }
+
+    // MARK: - Floating Panel (Pin/Unpin) (#63)
+
+    /// Toggles between popover mode and detached floating panel mode.
+    /// Pin:   closes the popover → opens a persistent NSPanel at .floating window level
+    /// Unpin: closes the floating panel → restores normal popover/click behaviour
+    func togglePin() {
+        if isPinned {
+            unpin()
+        } else {
+            pin()
+        }
+    }
+
+    private func pin() {
+        isPinned = true
+
+        // Close the popover — we're taking over with a panel
+        popover?.performClose(nil)
+
+        // Build the panel content with isPinned=true so the pin button shows as lit
+        let pinnedView = PopoverView(
+            gateway: gateway,
+            connectionManager: connectionManager,
+            isPinned: true,
+            onPinToggled: { [weak self] in
+                Task { @MainActor [weak self] in self?.togglePin() }
+            }
+        )
+
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 540),
+            styleMask: [
+                .titled,
+                .closable,
+                .fullSizeContentView,
+                .nonactivatingPanel,   // doesn't steal focus from other apps
+                .utilityWindow,        // smaller title bar, stays above most windows
+            ],
+            backing: .buffered,
+            defer: false
+        )
+
+        panel.level = .floating             // above normal windows
+        panel.isFloatingPanel = true
+        panel.isMovableByWindowBackground = true
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.backgroundColor = NSColor.windowBackgroundColor
+        panel.isReleasedWhenClosed = false
+
+        // Position: near the status item, below the menu bar
+        if let button = statusItem?.button, let screen = button.window?.screen ?? NSScreen.main {
+            let buttonRect = button.convert(button.bounds, to: nil)
+            let screenRect = button.window?.convertToScreen(buttonRect) ?? buttonRect
+            let panelX = min(screenRect.minX, screen.frame.maxX - 330)
+            let panelY = screen.frame.maxY - screen.visibleFrame.maxY + screen.visibleFrame.height - 550
+            panel.setFrameOrigin(NSPoint(x: panelX, y: panelY))
+        } else {
+            panel.center()
+        }
+
+        panel.contentViewController = NSHostingController(rootView: pinnedView)
+
+        // When the panel is closed via the close button, unpin cleanly
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: panel,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self, self.isPinned else { return }
+                self.isPinned = false
+                self.floatingPanel = nil
+                // Restore popover pin button to unlit state
+                self.refreshPopoverContent()
+            }
+        }
+
+        panel.orderFront(nil)
+        self.floatingPanel = panel
+    }
+
+    private func unpin() {
+        isPinned = false
+        floatingPanel?.close()
+        floatingPanel = nil
+        // Refresh popover so it reopens with isPinned=false
+        refreshPopoverContent()
+    }
+
+    /// Rebuilds the popover content view with the current isPinned state.
+    /// Called after pin state changes so the pin button reflects reality.
+    private func refreshPopoverContent() {
+        let updatedView = PopoverView(
+            gateway: gateway,
+            connectionManager: connectionManager,
+            isPinned: isPinned,
+            onPinToggled: { [weak self] in
+                Task { @MainActor [weak self] in self?.togglePin() }
+            }
+        )
+        if let vc = popover?.contentViewController as? NSHostingController<PopoverView> {
+            vc.rootView = updatedView
+        }
     }
 
     // MARK: - Reactive Icon Updates (#16)
