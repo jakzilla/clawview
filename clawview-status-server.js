@@ -204,9 +204,24 @@ function humaniseToolCall(name, args) {
 
       // Strip cd prefix (cd /path && actual-command)
       const withoutCd = cmd.replace(/^cd\s+\S+\s*&&\s*/, '').trim();
-      // Strip env var prefix (VARNAME=value command)
-      const withoutEnv = withoutCd.replace(/^(?:[A-Z_]+=\S+\s+)+/, '').trim();
-      const effective = withoutEnv || withoutCd || cmd;
+      // Strip env var prefixes (VARNAME=value command), including:
+      //   - Simple:            VAR=foo
+      //   - Single-quoted:     VAR='foo bar'
+      //   - Double-quoted:     VAR="foo bar"
+      //   - Command subst:     VAR="$(security find...)" — may contain spaces inside quotes
+      // Strategy: consume one assignment token at a time from the left.
+      function stripEnvVars(str) {
+        const envVarRe = /^[A-Z_][A-Z0-9_]*=(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\S+)\s*/;
+        let s = str;
+        let prev;
+        do {
+          prev = s;
+          s = s.replace(envVarRe, '');
+        } while (s !== prev && s.length > 0);
+        return s.trim();
+      }
+      const withoutEnv = stripEnvVars(withoutCd) || withoutCd;
+      const effective = withoutEnv || cmd;
       const firstWord = effective.split(/\s+/)[0];
       const restWords = effective.split(/\s+/).slice(1, 4).join(' ');
 
