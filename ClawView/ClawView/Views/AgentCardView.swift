@@ -78,12 +78,14 @@ struct AgentCardView: View {
 
                 Spacer()
 
-                // Chevron
+                // Chevron — visual only; the card HStack uses accessibilityElement(children: .ignore)
+                // so VoiceOver reads the combined card label instead of individual children (#39).
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12))
                     .foregroundColor(Color(NSColor.tertiaryLabelColor))
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isExpanded)
+                    .accessibilityHidden(true)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -103,6 +105,13 @@ struct AgentCardView: View {
                     isExpanded.toggle()
                 }
             }
+            // Combined accessibility element for VoiceOver (#39):
+            // reads name, role, and current activity/status as a single unit,
+            // then announces the expand/collapse action
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(agent.name), \(agent.role). \(agent.isActive ? agent.activity : "Idle")")
+            .accessibilityHint(isExpanded ? "Tap to collapse details" : "Tap to expand details")
+            .accessibilityAddTraits(.isButton)
 
             // Expanded detail
             if isExpanded {
@@ -224,6 +233,7 @@ struct ExpandedAgentDetail: View {
                                 Circle()
                                     .fill(subAgentStatusColor(sub.status))
                                     .frame(width: 6, height: 6)
+                                    .accessibilityHidden(true)  // label text conveys status (#39)
 
                                 // Label: use API label if it has real content; otherwise
                                 // fall back to "Sub-agent N" with ordinal (#27).

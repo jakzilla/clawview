@@ -57,10 +57,12 @@ struct PopoverHeaderView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .center, spacing: 8) {
-                // Status dot
+                // Status dot (#39)
                 Circle()
                     .fill(connectionDotColor)
                     .frame(width: 8, height: 8)
+                    .accessibilityLabel(connectionStateDescription)
+                    .accessibilityAddTraits(.isStaticText)
 
                 // System name — uses user display name if set, otherwise cleaned hostname (#28)
                 Text(resolvedDisplayName)
@@ -90,6 +92,7 @@ struct PopoverHeaderView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 11, weight: .semibold))
+                        .accessibilityHidden(true)  // text label conveys the meaning (#39)
                     Text("Data may be outdated — last updated \(heartbeatAge) ago")
                         .font(.caption2)
                         .lineLimit(1)
@@ -128,6 +131,16 @@ struct PopoverHeaderView: View {
         }
         // 3. Fall back to a safe default
         return "OpenClaw"
+    }
+
+    /// Human-readable connection state for VoiceOver (#39)
+    private var connectionStateDescription: String {
+        switch gateway.connectionState {
+        case .localNetwork: return "Connection: local network"
+        case .sshTunnel: return "Connection: remote tunnel"
+        case .disconnected: return "Connection: disconnected"
+        case .error: return "Connection: error"
+        }
     }
 
     private var connectionDotColor: Color {
@@ -213,6 +226,7 @@ struct DisconnectedView: View {
             Image(systemName: "wifi.slash")
                 .font(.system(size: 40))
                 .foregroundColor(Color(NSColor.tertiaryLabelColor))
+                .accessibilityHidden(true)  // decorative; text below conveys the state (#39)
 
             VStack(spacing: 6) {
                 // Use configured host rather than hardcoded "Mac mini" (#35)
@@ -302,6 +316,7 @@ struct FooterButton: View {
             HStack(spacing: 4) {
                 Image(systemName: icon)
                     .font(.system(size: 12))
+                    .accessibilityHidden(true)  // label Text already conveys purpose (#39)
                 Text(label)
                     .font(.system(.caption, weight: .medium))
             }
