@@ -294,4 +294,39 @@ class GatewayService: ObservableObject {
         guard let lastHeartbeat = lastHeartbeat else { return true }
         return Date().timeIntervalSince(lastHeartbeat) > 300
     }
+
+    // MARK: - Hostname Humanisation (#28)
+
+    /// Cleans a raw OS hostname into a human-friendly display name.
+    ///
+    /// Rules (applied in order):
+    /// 1. Split on hyphens and underscores.
+    /// 2. Drop tokens that are app-name synonyms (case-insensitive):
+    ///    "openclaw", "openclaw's", "clawview", "claw".
+    ///    Showing "OpenClaw" in the header when the app is already called ClawView
+    ///    is pure redundancy.
+    /// 3. Drop single-character tokens (noise from e.g. "mac-s-mini").
+    /// 4. Title-case remaining tokens and join with spaces.
+    /// 5. If nothing survives, return the raw hostname unchanged.
+    ///
+    /// Examples:
+    ///   "OpenClaws-Mac-mini"  → "Mac Mini"
+    ///   "jack-macbook-pro"    → "Jack Macbook Pro"
+    ///   "griffin"             → "Griffin"
+    ///   "openclaw"            → "openclaw" (fallback — nothing meaningful survived)
+    static func cleanHostname(_ raw: String) -> String {
+        let appTokens: Set<String> = ["openclaw", "openclaws", "openclaw's", "openclaws's", "clawview", "claw"]
+        let tokens = raw
+            .components(separatedBy: CharacterSet(charactersIn: "-_"))
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { token in
+                guard token.count > 1 else { return false }
+                return !appTokens.contains(token.lowercased())
+            }
+            .map { token -> String in
+                guard let first = token.first else { return token }
+                return first.uppercased() + token.dropFirst().lowercased()
+            }
+        return tokens.isEmpty ? raw : tokens.joined(separator: " ")
+    }
 }

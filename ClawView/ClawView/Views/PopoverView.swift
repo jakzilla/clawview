@@ -26,8 +26,8 @@ struct PopoverView: View {
     @ViewBuilder
     private var mainContent: some View {
         VStack(spacing: 0) {
-            // Header
-            PopoverHeaderView(gateway: gateway)
+            // Header — pass connectionManager so header can read display name (#28)
+            PopoverHeaderView(gateway: gateway, connectionManager: connectionManager)
 
             // Body
             if gateway.connectionState == .disconnected {
@@ -49,6 +49,8 @@ struct PopoverView: View {
 
 struct PopoverHeaderView: View {
     @ObservedObject var gateway: GatewayService
+    /// Connection settings, used to read the user-configured display name (#28).
+    var connectionManager: ConnectionManager? = nil
     @State private var heartbeatAge: String = "–"
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -60,8 +62,8 @@ struct PopoverHeaderView: View {
                     .fill(connectionDotColor)
                     .frame(width: 8, height: 8)
 
-                // System name — hostname only, no hardcoded "Mac mini" prefix (#8)
-                Text(gateway.systemStatus?.hostname ?? "OpenClaw")
+                // System name — uses user display name if set, otherwise cleaned hostname (#28)
+                Text(resolvedDisplayName)
                     .font(.system(.title3, design: .default, weight: .semibold))
                     .foregroundColor(.primary)
 
@@ -107,6 +109,22 @@ struct PopoverHeaderView: View {
         .onAppear {
             heartbeatAge = gateway.heartbeatAge
         }
+    }
+
+    /// Resolves the best available display name for the connected host (#28).
+    /// Priority: user display name > cleaned hostname > raw hostname > "OpenClaw"
+    private var resolvedDisplayName: String {
+        // 1. User-configured display name takes priority
+        if let userDisplay = connectionManager?.settings.displayName,
+           !userDisplay.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return userDisplay.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        // 2. Clean the raw hostname from the API
+        if let raw = gateway.systemStatus?.hostname {
+            return GatewayService.cleanHostname(raw)
+        }
+        // 3. Fall back to a safe default
+        return "OpenClaw"
     }
 
     private var connectionDotColor: Color {

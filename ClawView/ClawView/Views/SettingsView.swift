@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var host: String = ""
     @State private var portString: String = ""
     @State private var useMock: Bool = false
+    @State private var displayName: String = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -69,6 +70,20 @@ struct SettingsView: View {
                                     .textFieldStyle(.roundedBorder)
                                     .font(.body)
                             }
+
+                            // Display name override (#28): friendly label shown in the
+                            // popover header instead of the raw OS hostname.
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Display name (optional)")
+                                    .font(.system(.caption, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                TextField("e.g. Mac mini, Home Server", text: $displayName)
+                                    .textFieldStyle(.roundedBorder)
+                                    .font(.body)
+                                Text("Overrides the hostname shown in the header.")
+                                    .font(.caption2)
+                                    .foregroundColor(Color(NSColor.tertiaryLabelColor))
+                            }
                         }
                         .padding(12)
                         .background(
@@ -98,6 +113,7 @@ struct SettingsView: View {
                         connectionManager.settings.host = host
                         connectionManager.settings.port = Int(portString) ?? 7317
                         connectionManager.settings.useMockData = useMock
+                        connectionManager.settings.displayName = displayName
                         connectionManager.saveAndConnect()
                         onDismiss()
                     }
@@ -118,6 +134,7 @@ struct SettingsView: View {
             host = connectionManager.settings.host
             portString = String(connectionManager.settings.port)
             useMock = connectionManager.settings.useMockData
+            displayName = connectionManager.settings.displayName
         }
     }
 }
