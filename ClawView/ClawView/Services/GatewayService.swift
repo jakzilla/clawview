@@ -36,7 +36,16 @@ class GatewayService: ObservableObject {
 
     private var pollingTask: Task<Void, Never>?
     private var webSocketTask: URLSessionWebSocketTask?
-    private var urlSession = URLSession.shared
+    /// Custom URLSession with tight timeouts (#30).
+    /// Default URLSession.shared allows 60s per request — far too long for a
+    /// local/LAN gateway poll. 8s request timeout means a hung gateway surfaces
+    /// as a disconnect within one poll cycle, not after a 60s freeze.
+    private var urlSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 8   // per-request: gateway must start responding within 8s
+        config.timeoutIntervalForResource = 10 // total resource load: 10s hard cap
+        return URLSession(configuration: config)
+    }()
 
     // Connection config
     private(set) var host: String = ""
