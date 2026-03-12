@@ -569,9 +569,12 @@ function parseSessionFile(sessionFile) {
 
         // Build recent activity entries (last 8, within 24h window)
         // For entries: prefer tool call text (more granular) over assistant narration
+        // Deduplicate: skip consecutive identical entries (e.g. 8x "Reading file")
         if (ts > 0 && (now - ts) < ENTRY_WINDOW_MS) {
           const entryText = messageToolCall || messageText;
-          if (entryText && result.recentEntries.length < 8) {
+          const lastEntry = result.recentEntries[0]; // most recent (we unshift)
+          const isDuplicate = lastEntry && lastEntry.text === entryText;
+          if (entryText && !isDuplicate && result.recentEntries.length < 8) {
             result.recentEntries.unshift({
               time: new Date(ts).toISOString(),
               text: entryText,
