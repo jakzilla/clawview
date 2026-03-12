@@ -161,7 +161,7 @@ const AGENT_META = {
 // ─── Thresholds ──────────────────────────────────────────────────────────────
 
 // An agent is "active" (not just idle) if its last session activity was within this window
-const ACTIVE_WINDOW_MS        = 30 * 60 * 1000;  // 30 minutes
+const ACTIVE_WINDOW_MS        = 2 * 60 * 1000;   // 2 minutes — session must be live-ish to show active
 // Within an active session, flag as "stuck" if silent for this long
 const STUCK_THRESHOLD_MS      = 10 * 60 * 1000;  // 10 minutes (per spec)
 // If idle for more than this, show generic idle text rather than last message
@@ -668,9 +668,10 @@ function getAgentStatusV2(agentId) {
   // is still shown as idle — it has a session but hasn't done anything meaningful.
 
   const wasRecentlyActive = activityAgeMs < ACTIVE_WINDOW_MS;
-  // Require that we actually have parseable activity content to show "active"
-  const hasParseableActivity = parsed.lastActivityMs > 0 && parsed.activityText != null;
-  const status = (wasRecentlyActive && hasParseableActivity) ? 'active' : 'idle';
+  // Status is determined by session recency alone — not by whether we parsed text.
+  // session.updatedAt is the reliable signal. Parsed text is best-effort display detail.
+  // An agent whose session was touched in the last 2 minutes is active, period.
+  const status = wasRecentlyActive ? 'active' : 'idle';
 
   // Health — only "stuck" if agent was active AND has gone suspiciously quiet
   let health = 'normal';
@@ -704,7 +705,11 @@ function getAgentStatusV2(agentId) {
     } catch (e) {}
   }
 
-  if (!activityText || !wasRecentlyActive) {
+  if (wasRecentlyActive && !activityText) {
+    // Active but text extraction failed — show a neutral fallback, not "idle"
+    activityText = 'Working...';
+    activityType = 'unknown';
+  } else if (!wasRecentlyActive) {
     // Idle fallback
     const hoursAgo = Math.floor(activityAgeMs / 3600000);
     const minsAgo = Math.floor(activityAgeMs / 60000);
@@ -715,7 +720,7 @@ function getAgentStatusV2(agentId) {
     } else {
       activityText = activityText || 'Idle — ready';
     }
-    activityType = wasRecentlyActive ? (activityType || 'stale') : 'stale';
+    activityType = 'stale';
   }
 
   // ── Session cost ───────────────────────────────────────────────────────────
