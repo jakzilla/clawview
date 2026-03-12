@@ -373,14 +373,19 @@ function humaniseToolCall(name, args) {
 // ─── Activity text cleaner ───────────────────────────────────────────────────
 
 /**
- * Take raw assistant text and return a clean, human-readable activity string,
- * but ONLY if it reads like "what I'm doing" not "what I'm saying to Jack".
+ * Take raw assistant text and return a clean, human-readable activity string.
  *
- * We want: "Reading SPEC.md", "Writing the summary", "Checking the API"
- * We don't want: "Honestly, I can't fully guarantee it right now..."
- * We don't want: "Let me check that for you..."
+ * Strategy: BLACKLIST junk, accept everything meaningful.
+ * The old whitelist approach rejected valid agent speech like:
+ *   "Yes — let me pick up where...", "I'll fix this now", "Done — merged PR #78"
  *
- * Returns null if the text is conversational (should fall back to tool_call or "Thinking...")
+ * We keep: any meaningful sentence (>15 chars) that is NOT:
+ *   - Raw tool call syntax (tool names, JSON args)
+ *   - Bare file paths or URLs
+ *   - Code blocks / technical output
+ *   - Very short fragments
+ *
+ * Returns null only if the text is truly junk (code, paths, tool calls, too short).
  */
 function cleanActivityText(raw) {
   if (!raw || typeof raw !== 'string') return null;
@@ -396,50 +401,39 @@ function cleanActivityText(raw) {
     .replace(/\s+/g, ' ')
     .trim();
 
-  // Drop if it looks like JSON, file path, or technical output
-  if (text.startsWith('{') || text.startsWith('[') || text.startsWith('/')) return null;
-  if (text.length < 5) return null;
+  // Must be meaningful length — filters out single words and tiny fragments
+  if (text.length < 15) return null;
 
-  // ── Strategy: only accept text that clearly describes work being done ──
-  //
-  // The challenge: agents produce two types of assistant messages:
-  // 1. WORK descriptions: "Reading file.md", "Building the API", "Running command"
-  // 2. CONVERSATION: "Linus is on it!", "Let me check that...", "Done — committed."
-  //
-  // For ClawView, we only want (1). If we can't get a clean work description,
-  // we fall through to tool_call text rather than show a chat excerpt.
-  //
-  // Accept:
-  //   - Present-tense gerund action verbs (most common in subagent narration)
-  //   - "Let me ..." / "I'll ..." / "I'm ..." task-framing phrases (pre-action narration)
-  //   - "Now ..." / "Next ..." / "Starting ..." phrases
-  // Reject: all other conversational text.
+  // ── Blacklist: reject technical junk ────────────────────────────────────
 
-  const actionVerbPattern = /^(reading|writing|running|building|checking|reviewing|updating|creating|editing|spawning|fetching|searching|analysing|analyzing|deploying|testing|fixing|refactoring|installing|configuring|loading|processing|parsing|generating|compiling|linking|downloading|uploading|scanning|auditing|committing|pushing|pulling|cloning|implementing|opening|closing|merging|diffing|linting|formatting|migrating|seeding|initialising|initializing|starting|stopping|restarting|debugging|tracing|profiling|benchmarking|validating|verifying|confirming|completing|finishing|handling|applying|patching|reverting|tagging|releasing|publishing|archiving)/i;
+  // Bare file path (starts with /, ~/, or ./)
+  if (/^(?:\/|~\/|\.\/)/.test(text)) return null;
 
-  // Also accept narration patterns that appear at start of subagent work descriptions
-  const narrationPattern = /^(let me|i'll|i will|i'm going to|now |next |starting |beginning |first |step \d|working on|implementing|going to|about to)/i;
+  // JSON object or array
+  if (text.startsWith('{') || text.startsWith('[')) return null;
 
-  if (!actionVerbPattern.test(text) && !narrationPattern.test(text)) return null;
+  // Looks like a URL
+  if (/^https?:\/\//.test(text)) return null;
 
-  // Strip leading narration fluff ("Let me ", "I'll ", "I'm going to ") to get
-  // the core action. This makes the display more compact and consistent.
-  text = text
-    .replace(/^let me\s+/i, '')
-    .replace(/^i'll\s+/i, '')
-    .replace(/^i will\s+/i, '')
-    .replace(/^i'm going to\s+/i, '')
-    .replace(/^i'm\s+/i, '')
-    .replace(/^going to\s+/i, '')
-    .replace(/^about to\s+/i, '')
-    .trim();
+  // Raw tool call pattern: "tool_name(..." or "<tool>" or "toolName: {" style
+  if (/^[a-z_]+\s*[\({<]/.test(text)) return null;
 
-  // Capitalise first letter after stripping
+  // Looks like a shell command (starts with $)
+  if (/^\$\s/.test(text)) return null;
+
+  // Purely numeric or symbol noise
+  if (/^[\d\s\-_=.,:;!?]+$/.test(text)) return null;
+
+  // Use only the first sentence for display — take the leading thought, not a paragraph
+  const firstSentence = text.split(/(?<=[.!?])\s+[A-Z]|(?<=\.)\s+I\s/)[0].trim();
+  text = (firstSentence.length >= 15 ? firstSentence : text).slice(0, 120).trim();
+
+  // Capitalise first letter
   if (text.length > 0) {
     text = text.charAt(0).toUpperCase() + text.slice(1);
   }
 
-  return text.slice(0, 100).trim();
+  return text || null;
 }
 
 // ─── Session file parser ──────────────────────────────────────────────────────
