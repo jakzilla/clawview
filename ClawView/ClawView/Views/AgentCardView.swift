@@ -254,34 +254,6 @@ struct ExpandedAgentDetail: View {
             // Container
             VStack(alignment: .leading, spacing: 12) {
 
-                // Recent Activity — wired to real _recentActivity from Gateway API (#2)
-                VStack(alignment: .leading, spacing: 4) {
-                    sectionHeader("RECENT ACTIVITY")
-                    Divider()
-
-                    if agent.filteredRecentActivity.isEmpty {
-                        Text("No recent activity")
-                            .font(.caption)
-                            .foregroundColor(Color(NSColor.tertiaryLabelColor))
-                    } else {
-                        ForEach(agent.filteredRecentActivity.suffix(8)) { entry in
-                            HStack(alignment: .top, spacing: 8) {
-                                Text(entry.formattedTime)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundColor(Color(NSColor.tertiaryLabelColor))
-                                    // Width 72: fits "Yest HH:mm" (9 chars) and "MMM d HH:mm" (11 chars) (#32)
-                                    .frame(width: 72, alignment: .leading)
-
-                                // cleanedText is non-nil for every entry in filteredRecentActivity
-                                Text(entry.cleanedText ?? entry.text)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(2)
-                            }
-                        }
-                    }
-                }
-
                 // Sub-agents — with proper status colours and identity (#5)
                 if !agent.subAgents.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {

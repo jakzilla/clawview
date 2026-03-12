@@ -816,19 +816,28 @@ function getAgentStatusV2(agentId) {
   }
 
   // ── Activity text ──────────────────────────────────────────────────────────
-  // Priority:
-  // 1. agent_reported (.status file) — ONLY if .status is fresher than session activity.
-  //    If the session has newer activity (agent moved on from the initial task), prefer that.
-  // 2. tool_call from session file (humanised)
-  // 3. inferred from last assistant text
-  // 4. stale / idle fallback
-  //
-  // The .status file goes stale mid-task (#89): agents write it at task start/end only.
-  // When session activity is newer than the .status write, the session is more accurate.
-  const sessionActivityMs = lastActivityMs; // most recent session event timestamp
-  const statusIsNewer = statusFileTs > 0 && statusFileTs >= sessionActivityMs;
-  let activityText = (agentReportedActivity && statusIsNewer) ? agentReportedActivity : (parsed.activityText || agentReportedActivity);
-  let activityType = (agentReportedActivity && statusIsNewer) ? agentReportedActivityType : (parsed.activityType || agentReportedActivityType);
+  // Priority (fix for #120):
+  // 1. agent_reported (.status file) with state="active" AND fresh (< 30min) — ALWAYS wins.
+  //    The .status file is the agent's intentional self-description of what it is doing.
+  //    JSONL tool calls are implementation noise (curl calls, file reads) — not what the
+  //    agent is actually working on. When an agent writes state:"active", that IS the
+  //    authoritative source regardless of whether a tool call ran more recently.
+  // 2. .status file with no state or state != "active" — falls through to session.
+  //    If the agent wrote state:"idle"/"done", the session activity may be more relevant.
+  // 3. tool_call from session file (humanised)
+  // 4. inferred from last assistant text
+  // 5. stale / idle fallback
+  let activityText;
+  let activityType;
+  if (agentReportedActive && agentReportedActivity) {
+    // .status.state === "active" and file is fresh → unconditional win (#120)
+    activityText = agentReportedActivity;
+    activityType = agentReportedActivityType;
+  } else {
+    // Fall back to session JSONL activity, with .status as secondary fallback
+    activityText = parsed.activityText || agentReportedActivity || null;
+    activityType = parsed.activityType || agentReportedActivityType || null;
+  }
 
   if ((wasRecentlyActive || agentReportedActive) && !activityText) {
     activityText = 'Working...';
