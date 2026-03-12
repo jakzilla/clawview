@@ -157,8 +157,14 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity)
                     .controlSize(.large)
 
-                    // Version
-                    Text("ClawView v0.1 · OpenClaw")
+                    // Version — read from bundle, not hardcoded (#126)
+                    // Same logic as ClawViewApp.showContextMenu() for consistency
+                    let versionString = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+                    let buildString = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
+                    let versionLabel = buildString.isEmpty
+                        ? "ClawView v\(versionString) · OpenClaw"
+                        : "ClawView v\(versionString) (\(buildString)) · OpenClaw"
+                    Text(versionLabel)
                         .font(.caption2)
                         .foregroundColor(Color(NSColor.tertiaryLabelColor))
                         .frame(maxWidth: .infinity, alignment: .center)

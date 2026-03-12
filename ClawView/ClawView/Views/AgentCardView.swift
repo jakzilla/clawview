@@ -51,7 +51,8 @@ struct AgentCardView: View {
                             Text("Last: \(lastAction)")
                                 .font(.caption)
                                 .foregroundColor(Color(NSColor.tertiaryLabelColor))
-                                .lineLimit(1)
+                                .lineLimit(2)  // #129 — allow wrapping; card expands to fit
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         .padding(.top, 2)
                     } else {
