@@ -319,7 +319,7 @@ extension SystemStatus {
                     "last_activity": "2026-03-11T14:25:00Z",
                     "channel": "1480707570179117167",
                     "sub_agents": [
-                        { "id": "sub1", "label": "designer-clawview", "status": "running", "duration_seconds": 180 }
+                        { "id": "sub1", "label": "designer-clawview", "status": "active", "duration_seconds": 180 }
                     ],
                     "cost": { "session_total": 0.42 }
                 },
