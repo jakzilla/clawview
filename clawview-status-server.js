@@ -918,9 +918,10 @@ function getAgentStatusV2(agentId) {
       let label = 'sub-agent';
       if (session.sessionFile && fs.existsSync(session.sessionFile)) {
         try {
-          const startBuf = Buffer.alloc(1024);
+          // Read 64KB — enough to capture the first (large) user message line (#130)
+          const startBuf = Buffer.alloc(65536);
           const sfd = fs.openSync(session.sessionFile, 'r');
-          const bytesRead = fs.readSync(sfd, startBuf, 0, 1024, 0);
+          const bytesRead = fs.readSync(sfd, startBuf, 0, 65536, 0);
           fs.closeSync(sfd);
           const firstLines = startBuf.slice(0, bytesRead).toString('utf8').split('\n');
           for (const line of firstLines) {
@@ -937,13 +938,31 @@ function getAgentStatusV2(agentId) {
                 } else if (typeof content === 'string') {
                   text = content;
                 }
-                // Extract short label from task description
-                const match = text.match(/You are (?:a |an )?([^.]+?)\./);
-                if (match) {
-                  label = match[1].slice(0, 30).trim();
-                } else if (text.length > 0) {
-                  // Take first meaningful words
-                  label = text.replace(/\n/g, ' ').trim().slice(0, 30);
+                // 1. "[Subagent Task]: You are X," — most specific, strips role suffix
+                const taskRoleMatch = text.match(/\[Subagent Task\]:\s*You are ([^,\n]+)/);
+                if (taskRoleMatch) {
+                  label = taskRoleMatch[1].slice(0, 40).trim();
+                  break;
+                }
+                // 2. "You are a/an X." — generic role pattern
+                const roleMatch = text.match(/You are (?:a |an )?([^.,\n]+)/);
+                if (roleMatch) {
+                  // Skip boilerplate "running as a subagent"
+                  const candidate = roleMatch[1].trim();
+                  if (!candidate.startsWith('running')) {
+                    label = candidate.slice(0, 40).trim();
+                    break;
+                  }
+                }
+                // 3. First line of [Subagent Task] section as fallback
+                const taskMatch = text.match(/\[Subagent Task\]:\s*(.{5,80})/);
+                if (taskMatch) {
+                  label = taskMatch[1].replace(/\n.*/g, '').trim().slice(0, 40);
+                  break;
+                }
+                // 4. Raw first meaningful words
+                if (text.length > 0) {
+                  label = text.replace(/\n/g, ' ').trim().slice(0, 40);
                 }
                 break;
               }
