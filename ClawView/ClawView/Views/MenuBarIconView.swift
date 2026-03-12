@@ -1,14 +1,10 @@
 import Cocoa
-import QuartzCore
 
 // MARK: - Menu Bar Icon Manager
 // Handles the NSStatusItem and icon state/animation in AppKit.
-// SwiftUI animations don't work at the NSStatusBarButton level,
-// so we drive the pulse via Core Animation directly.
 
 class MenuBarIconController: NSObject {
     var statusItem: NSStatusItem?
-    private var pulseAnimation: CABasicAnimation?
     private var badgeLayer: CALayer?
 
     enum IconState {
@@ -46,8 +42,6 @@ class MenuBarIconController: NSObject {
     private func applyState(_ state: IconState) {
         guard let button = statusItem?.button else { return }
 
-        // Stop any existing animation
-        stopPulse()
         removeBadge()
 
         switch state {
@@ -57,10 +51,10 @@ class MenuBarIconController: NSObject {
             button.alphaValue = 1.0
 
         case .working:
+            // Static icon — no pulse/animation (#65)
             button.image = menuBarImage(for: .working)
             button.image?.isTemplate = true
             button.alphaValue = 1.0
-            startPulse(on: button)
 
         case .attention:
             button.image = menuBarImage(for: .attention)
@@ -81,30 +75,6 @@ class MenuBarIconController: NSObject {
             button.image = dimmedImage(menuBarImage(for: .disconnected))
             button.alphaValue = 0.4
         }
-    }
-
-    // MARK: - Pulse Animation (Core Animation)
-
-    private func startPulse(on button: NSStatusBarButton) {
-        // Remove any existing animation layer
-        stopPulse()
-
-        let animation = CABasicAnimation(keyPath: "opacity")
-        animation.fromValue = 1.0
-        animation.toValue = 0.45
-        animation.duration = 1.2
-        animation.autoreverses = true
-        animation.repeatCount = .infinity
-        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-
-        button.layer?.add(animation, forKey: "clawview.pulse")
-        pulseAnimation = animation
-    }
-
-    private func stopPulse() {
-        statusItem?.button?.layer?.removeAnimation(forKey: "clawview.pulse")
-        statusItem?.button?.layer?.opacity = 1.0
-        pulseAnimation = nil
     }
 
     // MARK: - Badge Layer
