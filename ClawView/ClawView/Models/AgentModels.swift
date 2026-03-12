@@ -99,6 +99,47 @@ struct RecentActivityEntry: Identifiable, Codable {
         formatter.dateFormat = "HH:mm"
         return formatter.string(from: time)
     }
+
+    /// Returns a display-quality version of the activity text, or `nil` if the
+    /// entry is pure noise and should be filtered out entirely (#26).
+    ///
+    /// Noise entries (filtered out — return nil):
+    ///   "Running sleep", "Running which", "Running ls", "Running cat",
+    ///   "Running echo", "Running pwd", "Running cd", "Running true",
+    ///   "Running false", "Working..." (Gateway's own placeholder)
+    ///
+    /// Low-signal entries (normalised to "Working…"):
+    ///   "Running command" (no further context)
+    ///
+    /// Everything else passes through unchanged.
+    var cleanedText: String? {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Pure noise — filter out entirely
+        let noisePatterns: [String] = [
+            "Running sleep",
+            "Running which",
+            "Running ls",
+            "Running cat",
+            "Running echo",
+            "Running pwd",
+            "Running cd",
+            "Running true",
+            "Running false",
+            "Working...",   // Gateway's own low-quality placeholder
+        ]
+        for noise in noisePatterns {
+            if t.caseInsensitiveCompare(noise) == .orderedSame { return nil }
+        }
+
+        // Low-signal — normalise to ellipsis variant
+        if t.caseInsensitiveCompare("Running command") == .orderedSame {
+            return "Working…"
+        }
+
+        // Everything else is fine
+        return t.isEmpty ? nil : t
+    }
 }
 
 struct AgentInfo: Identifiable, Codable {
@@ -170,6 +211,21 @@ struct AgentInfo: Identifiable, Codable {
 
     // Computed helper
     var isActive: Bool { status == "active" }
+
+    /// Filters and normalises the raw `recentActivity` entries for display (#26).
+    ///
+    /// The Gateway emits low-quality activity strings like "Running command",
+    /// "Running sleep", and "Running which" that give the user zero information.
+    /// This property:
+    ///   1. Strips pure noise entries (sleep, bare shell builtins, "Working...")
+    ///   2. Normalises remaining low-quality strings to "Working…"
+    ///   3. Preserves high-signal entries unchanged (file names, service names, etc.)
+    var filteredRecentActivity: [RecentActivityEntry] {
+        recentActivity.compactMap { entry in
+            let cleaned = entry.cleanedText
+            return cleaned == nil ? nil : entry
+        }
+    }
 }
 
 struct SystemStatus: Codable {
