@@ -114,13 +114,15 @@ struct PopoverHeaderView: View {
             .frame(height: 56)
 
             // Stale data warning banner (#43) — shown when no gateway response for > 5 minutes.
-            // heartbeatIsStale is a computed var on GatewayService (> 300s).
+            // heartbeatIsStale is a computed var on GatewayService (> 90s, #88).
+            // Reduced from 300s: 90s = ~3 missed poll cycles — fast enough to warn
+            // without false-alarming on transient connectivity blips.
             if gateway.heartbeatIsStale {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 11, weight: .semibold))
                         .accessibilityHidden(true)  // text label conveys the meaning (#39)
-                    Text("Data may be outdated — last updated \(heartbeatAge) ago")
+                    Text("Gateway unreachable — data is \(heartbeatAge) old")
                         .font(.caption2)
                         .lineLimit(1)
                 }
