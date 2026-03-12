@@ -834,9 +834,13 @@ function getAgentStatusV2(agentId) {
     activityText = agentReportedActivity;
     activityType = agentReportedActivityType;
   } else {
-    // Fall back to session JSONL activity, with .status as secondary fallback
-    activityText = parsed.activityText || agentReportedActivity || null;
-    activityType = parsed.activityType || agentReportedActivityType || null;
+    // Fall back to session JSONL activity only.
+    // Do NOT use agentReportedActivity as a fallback here — if the agent wrote
+    // state:"idle" or state:"done", its .status text describes a completed/idle
+    // state and must not leak into the active/working display. Session JSONL is
+    // the correct source when the agent is not explicitly reporting state:active.
+    activityText = parsed.activityText || null;
+    activityType = parsed.activityType || null;
   }
 
   if ((wasRecentlyActive || agentReportedActive) && !activityText) {
