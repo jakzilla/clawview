@@ -77,15 +77,113 @@ function humaniseToolCall(name, args) {
     case 'exec':
     case 'bash':
     case 'shell': {
-      const cmd = (a.command || '').trim().slice(0, 60);
+      const cmd = (a.command || '').trim();
       if (!cmd) return 'Running command';
-      // Strip dangerous noise, keep first verb
-      const firstWord = cmd.split(/\s+/)[0];
-      const safeVerbs = { git: 'Running git', npm: 'Running npm', node: 'Running script',
-                          python: 'Running script', python3: 'Running script',
-                          curl: 'Fetching URL', brew: 'Running brew',
-                          swift: 'Building Swift', cargo: 'Building Rust' };
-      return safeVerbs[firstWord] || 'Running command';
+
+      // Strip cd prefix (cd /path && actual-command)
+      const withoutCd = cmd.replace(/^cd\s+\S+\s*&&\s*/, '').trim();
+      // Strip env var prefix (VARNAME=value command)
+      const withoutEnv = withoutCd.replace(/^(?:[A-Z_]+=\S+\s+)+/, '').trim();
+      const effective = withoutEnv || withoutCd || cmd;
+      const firstWord = effective.split(/\s+/)[0];
+      const restWords = effective.split(/\s+/).slice(1, 4).join(' ');
+
+      // git operations — extract the subcommand
+      if (firstWord === 'git') {
+        const sub = effective.split(/\s+/)[1] || '';
+        const gitMap = {
+          commit:   'Committing changes',
+          push:     'Pushing to GitHub',
+          pull:     'Pulling from remote',
+          checkout: 'Switching branch',
+          merge:    'Merging branch',
+          clone:    'Cloning repo',
+          fetch:    'Fetching updates',
+          status:   'Checking git status',
+          log:      'Reviewing git log',
+          add:      'Staging changes',
+          diff:     'Reviewing diff',
+          branch:   'Managing branches',
+          rebase:   'Rebasing branch',
+        };
+        return gitMap[sub] || 'Running git';
+      }
+
+      // Build / compile
+      if (firstWord === 'xcodebuild') return 'Building Xcode project';
+      if (firstWord === 'swift') return 'Building Swift';
+      if (firstWord === 'cargo') return 'Building Rust';
+      if (firstWord === 'make') return 'Building project';
+      if (firstWord === 'gcc' || firstWord === 'clang') return 'Compiling code';
+
+      // Package managers
+      if (firstWord === 'npm') {
+        const sub = effective.split(/\s+/)[1] || '';
+        return sub === 'install' ? 'Installing packages' : sub === 'run' ? 'Running npm script' : 'Running npm';
+      }
+      if (firstWord === 'yarn') return 'Running yarn';
+      if (firstWord === 'pip' || firstWord === 'pip3') return 'Installing Python package';
+      if (firstWord === 'brew') return 'Running brew';
+      if (firstWord === 'apt' || firstWord === 'apt-get') return 'Installing package';
+
+      // Scripts
+      if (firstWord === 'node') return 'Running Node.js script';
+      if (firstWord === 'python' || firstWord === 'python3') return 'Running Python script';
+      if (firstWord === 'bash' || firstWord === 'sh') return 'Running shell script';
+      if (firstWord === 'ruby') return 'Running Ruby script';
+
+      // Network / HTTP
+      if (firstWord === 'curl') {
+        // Try to extract a meaningful URL or endpoint
+        const urlMatch = effective.match(/https?:\/\/[^\s"']+/);
+        if (urlMatch) {
+          try {
+            const u = new URL(urlMatch[0]);
+            return `Fetching ${u.hostname}${u.pathname.slice(0, 30)}`;
+          } catch (e) {}
+        }
+        return 'Fetching URL';
+      }
+      if (firstWord === 'wget') return 'Downloading file';
+      if (firstWord === 'gh') {
+        // GitHub CLI — extract subcommand
+        const parts = effective.split(/\s+/);
+        const sub = parts[1] || '';
+        const sub2 = parts[2] || '';
+        const ghMap = {
+          'pr create':  'Opening pull request',
+          'pr merge':   'Merging pull request',
+          'pr comment': 'Commenting on PR',
+          'pr diff':    'Reviewing PR diff',
+          'pr view':    'Viewing pull request',
+          'issue list': 'Listing issues',
+          'issue view': 'Viewing issue',
+        };
+        return ghMap[`${sub} ${sub2}`] || ghMap[sub] || 'Running gh';
+      }
+
+      // File operations
+      if (firstWord === 'cp') return 'Copying files';
+      if (firstWord === 'mv') return 'Moving files';
+      if (firstWord === 'rm' || firstWord === 'trash') return 'Removing files';
+      if (firstWord === 'mkdir') return 'Creating directory';
+      if (firstWord === 'ls' || firstWord === 'find') return 'Listing files';
+      if (firstWord === 'cat' || firstWord === 'head' || firstWord === 'tail') return 'Reading file';
+      if (firstWord === 'grep' || firstWord === 'rg') return 'Searching files';
+      if (firstWord === 'open') return 'Opening application';
+
+      // System
+      if (firstWord === 'osascript') return 'Running AppleScript';
+      if (firstWord === 'launchctl') return 'Managing launch agent';
+      if (firstWord === 'pgrep' || firstWord === 'ps') return 'Checking processes';
+      if (firstWord === 'kill' || firstWord === 'pkill') return 'Stopping process';
+
+      // If it's a short command we don't recognise, show it trimmed
+      if (firstWord.length > 0 && firstWord.length <= 20 && /^[a-z]/.test(firstWord)) {
+        return `Running ${firstWord}`;
+      }
+
+      return 'Running command';
     }
 
     // Web / search
@@ -284,22 +382,26 @@ function parseSessionFile(sessionFile) {
           }
         }
 
-        // For the activity text: prefer tool call > cleaned text
+        // For the activity text: prefer meaningful assistant text > tool call > fallback
+        // Assistant text often has better context ("Reading SPEC.md", "Reviewing PR diff")
+        // than a raw tool call label. But only if it passes the action-verb filter.
         if (!foundActivity) {
-          if (messageToolCall) {
-            result.activityText = messageToolCall;
-            result.activityType = 'tool_call';
-            result.lastActivityMs = ts || now;
-            foundActivity = true;
-          } else if (messageText) {
+          if (messageText) {
+            // Meaningful text beats a generic tool call like "Running command"
             result.activityText = messageText;
             result.activityType = 'inferred';
+            result.lastActivityMs = ts || now;
+            foundActivity = true;
+          } else if (messageToolCall) {
+            result.activityText = messageToolCall;
+            result.activityType = 'tool_call';
             result.lastActivityMs = ts || now;
             foundActivity = true;
           }
         }
 
         // Build recent activity entries (last 8, within 24h window)
+        // For entries: prefer tool call text (more granular) over assistant narration
         if (ts > 0 && (now - ts) < ENTRY_WINDOW_MS) {
           const entryText = messageToolCall || messageText;
           if (entryText && result.recentEntries.length < 8) {
