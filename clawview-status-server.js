@@ -460,6 +460,16 @@ function cleanActivityText(raw) {
     .replace(/\s+/g, ' ')
     .trim();
 
+  // ── Pre-processing: strip markdown/URLs BEFORE blacklist checks (#123) ──
+  // Markdown links start with '[' which would falsely trigger the JSON-array
+  // blacklist below if not converted first.
+
+  // Strip Markdown links: [text](url) → text
+  text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+
+  // Strip bare URLs — https://... or http://...
+  text = text.replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim();
+
   // Must be meaningful length — filters out single words and tiny fragments
   if (text.length < 15) return null;
 
@@ -468,7 +478,7 @@ function cleanActivityText(raw) {
   // Bare file path (starts with /, ~/, or ./)
   if (/^(?:\/|~\/|\.\/)/.test(text)) return null;
 
-  // JSON object or array
+  // JSON object or array ('[' now only matches real JSON arrays — markdown links stripped above)
   if (text.startsWith('{') || text.startsWith('[')) return null;
 
   // Looks like a URL
@@ -483,18 +493,9 @@ function cleanActivityText(raw) {
   // Purely numeric or symbol noise
   if (/^[\d\s\-_=.,:;!?]+$/.test(text)) return null;
 
-  // Strip Markdown links: [text](url) → text (#123)
-  text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-
-  // Strip bare URLs — https://... or http://... (#123)
-  text = text.replace(/https?:\/\/\S+/g, '').trim();
-
-  // Blacklist: internal orchestration noise — not meaningful user-visible activity (#133)
+  // ── Blacklist: internal orchestration noise (#133) ──────────────────────
   if (/^Delegating to /i.test(text)) return null;
   if (/^Spawning (sub-?agent|subagent)/i.test(text)) return null;
-
-  // Re-check length after URL/markdown stripping
-  if (text.length < 15) return null;
 
   // Use only the first sentence for display — take the leading thought, not a paragraph
   const firstSentence = text.split(/(?<=[.!?])\s+[A-Z]|(?<=\.)\s+I\s/)[0].trim();
