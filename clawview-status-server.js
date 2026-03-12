@@ -46,17 +46,24 @@ const AGENT_NAME_TO_ID = {
   'Krill': null, // QA sub-agent, not a top-level agent
 };
 
+// Regex derived from AGENT_NAME_TO_ID keys — single source of truth.
+const AGENT_NAMES_PATTERN = new RegExp(
+  'You are (' + Object.keys(AGENT_NAME_TO_ID).join('|') + ')'
+);
+
 /**
  * Read the first user message from a session JSONL file and extract the agent
  * name from "You are <Name>" patterns. Returns the agent ID string or null.
  */
 function getSubagentOwner(sessionFile) {
   if (!sessionFile || !fs.existsSync(sessionFile)) return null;
+  let fd = null;
   try {
-    const fd = fs.openSync(sessionFile, 'r');
-    const buf = Buffer.alloc(4096); // first 4KB is enough to find the task header
-    const bytesRead = fs.readSync(fd, buf, 0, 4096, 0);
+    fd = fs.openSync(sessionFile, 'r');
+    const buf = Buffer.alloc(16384); // first 16KB — task text can be up to ~8KB
+    const bytesRead = fs.readSync(fd, buf, 0, 16384, 0);
     fs.closeSync(fd);
+    fd = null; // prevent double-close in finally
     const text = buf.slice(0, bytesRead).toString('utf8');
     const lines = text.split('\n');
     for (const line of lines) {
@@ -73,15 +80,21 @@ function getSubagentOwner(sessionFile) {
       } else if (typeof content === 'string') {
         taskText = content;
       }
-      // Match "You are Linus", "You are Steve", etc.
-      const m = taskText.match(/You are (Linus|Steve|Richard|Demis|Prawn|Santa|Clawdia|Krill)/);
+      // Match "You are Linus", "You are Steve", etc. (pattern derived from AGENT_NAME_TO_ID)
+      const m = taskText.match(AGENT_NAMES_PATTERN);
       if (m) {
         return AGENT_NAME_TO_ID[m[1]] || null;
       }
       // Only need the first user message
       break;
     }
-  } catch (e) {}
+  } catch (e) {
+    // Ignore read errors (file may be locked or truncated)
+  } finally {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch (e) {}
+    }
+  }
   return null;
 }
 
