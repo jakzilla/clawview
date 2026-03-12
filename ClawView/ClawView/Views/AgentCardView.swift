@@ -32,12 +32,36 @@ struct AgentCardView: View {
                         .foregroundColor(Color(NSColor.tertiaryLabelColor))
 
                     // Activity — use sanitised text to avoid emoji causing line-height variance (#41)
-                    Text(agent.isActive ? displayActivity : "Idle")
-                        .font(.subheadline)
-                        .foregroundColor(agent.isActive ? .primary : Color(NSColor.tertiaryLabelColor))
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+                    // For idle agents with recent history, surface the last meaningful action (#42)
+                    if agent.isActive {
+                        Text(displayActivity)
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 2)
+                    } else if let lastAction = idleLastAction {
+                        // "Idle · Last: Editing ultravox-server.js"
+                        // Shows what the agent was actually doing without needing to expand
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Idle")
+                                .font(.subheadline)
+                                .foregroundColor(Color(NSColor.tertiaryLabelColor))
+
+                            Text("Last: \(lastAction)")
+                                .font(.caption)
+                                .foregroundColor(Color(NSColor.tertiaryLabelColor))
+                                .lineLimit(1)
+                        }
                         .padding(.top, 2)
+                    } else {
+                        Text("Idle")
+                            .font(.subheadline)
+                            .foregroundColor(Color(NSColor.tertiaryLabelColor))
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 2)
+                    }
 
                     // Duration row — only for active agents with meaningful duration (#9, #15)
                     // Idle agents: show "Last active X ago" instead
@@ -126,6 +150,18 @@ struct AgentCardView: View {
     }
 
     // MARK: - Helpers
+
+    /// For idle agents with recent history, the last meaningful activity text (#42).
+    ///
+    /// Uses filteredRecentActivity (already quality-filtered in AgentInfo) and
+    /// takes the last entry. Returns nil if no meaningful history exists, so the
+    /// card falls back to showing plain "Idle".
+    private var idleLastAction: String? {
+        guard !agent.isActive else { return nil }
+        guard let lastEntry = agent.filteredRecentActivity.last else { return nil }
+        let text = lastEntry.text.trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? nil : text
+    }
 
     /// Activity text sanitised for display (#41).
     ///
