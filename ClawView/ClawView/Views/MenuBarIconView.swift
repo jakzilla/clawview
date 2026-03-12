@@ -119,11 +119,103 @@ class MenuBarIconController: NSObject {
         // Template rendering intent is set in Contents.json so macOS handles
         // light/dark mode automatically when isTemplate = true.
         if let image = NSImage(named: "MenuBarIcon") {
-            return image
+            // Trim horizontal whitespace so the claw fills the canvas cleanly (#66).
+            // The source asset has excess horizontal padding; trimmedToContent()
+            // finds the tightest bounding box of non-transparent pixels and
+            // re-renders the claw centred in an 18×18pt square.
+            return trimmedToContent(image, targetSize: NSSize(width: 18, height: 18))
         }
 
         // Fallback: draw a simple claw icon programmatically
         return drawFallbackIcon()
+    }
+
+    /// Crops `source` to the tightest bounding box of opaque pixels,
+    /// then scales the result to fit within `targetSize` with equal margins
+    /// on all sides (at most 1pt padding). This removes horizontal whitespace
+    /// baked into the source asset (#66).
+    private func trimmedToContent(_ source: NSImage, targetSize: NSSize) -> NSImage {
+        // Work at 2x for precision
+        let scale: CGFloat = 2.0
+        let srcW = Int(source.size.width * scale)
+        let srcH = Int(source.size.height * scale)
+
+        guard srcW > 0 && srcH > 0 else { return source }
+
+        // Rasterise the source image into a bitmap
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: srcW,
+            pixelsHigh: srcH,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: srcW * 4,
+            bitsPerPixel: 32
+        ) else { return source }
+
+        NSGraphicsContext.saveGraphicsState()
+        let ctx = NSGraphicsContext(bitmapImageRep: rep)
+        NSGraphicsContext.current = ctx
+        source.draw(in: CGRect(x: 0, y: 0, width: srcW, height: srcH))
+        NSGraphicsContext.restoreGraphicsState()
+
+        // Find bounding box of non-transparent pixels
+        guard let data = rep.bitmapData else { return source }
+
+        var minX = srcW, maxX = 0, minY = srcH, maxY = 0
+        for y in 0..<srcH {
+            for x in 0..<srcW {
+                let offset = (y * srcW + x) * 4
+                let alpha = data[offset + 3]
+                if alpha > 10 {  // ignore near-transparent fringe
+                    if x < minX { minX = x }
+                    if x > maxX { maxX = x }
+                    if y < minY { minY = y }
+                    if y > maxY { maxY = y }
+                }
+            }
+        }
+
+        // If no opaque pixels found, return original
+        guard minX <= maxX && minY <= maxY else { return source }
+
+        let contentW = CGFloat(maxX - minX + 1)
+        let contentH = CGFloat(maxY - minY + 1)
+
+        // Scale content to fill targetSize with 1pt inset on each side (2px at 2x)
+        let inset: CGFloat = 2.0  // 1pt at 2x
+        let availW = targetSize.width * scale - inset * 2
+        let availH = targetSize.height * scale - inset * 2
+        let scaleRatio = min(availW / contentW, availH / contentH)
+
+        let drawW = contentW * scaleRatio
+        let drawH = contentH * scaleRatio
+        let drawX = (targetSize.width * scale - drawW) / 2
+        let drawY = (targetSize.height * scale - drawH) / 2
+
+        // Create cropped source image (the tight bounding box)
+        let cropRect = NSRect(
+            x: CGFloat(minX) / scale,
+            y: CGFloat(srcH - maxY - 1) / scale,   // flip Y (AppKit coords)
+            width: contentW / scale,
+            height: contentH / scale
+        )
+
+        // Render final image at targetSize
+        let result = NSImage(size: targetSize)
+        result.lockFocus()
+        source.draw(
+            in: NSRect(x: drawX / scale, y: drawY / scale, width: drawW / scale, height: drawH / scale),
+            from: cropRect,
+            operation: .sourceOver,
+            fraction: 1.0
+        )
+        result.unlockFocus()
+        result.isTemplate = source.isTemplate
+        return result
     }
 
     private func dimmedImage(_ image: NSImage) -> NSImage {
