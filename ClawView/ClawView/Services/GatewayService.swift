@@ -290,9 +290,12 @@ class GatewayService: ObservableObject {
         return "\(elapsed / 60)m"
     }
 
+    /// True when no successful gateway response for > 90 seconds (#88).
+    /// At 5s base poll interval, 90s = ~3 failed retries. Fast enough to warn
+    /// while not triggering on transient connectivity blips.
     var heartbeatIsStale: Bool {
         guard let lastHeartbeat = lastHeartbeat else { return true }
-        return Date().timeIntervalSince(lastHeartbeat) > 300
+        return Date().timeIntervalSince(lastHeartbeat) > 90
     }
 
     // MARK: - Connection State Inference (#37)
