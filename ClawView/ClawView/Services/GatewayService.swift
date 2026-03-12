@@ -64,19 +64,35 @@ class GatewayService: ObservableObject {
     func startPolling() {
         pollingTask?.cancel()
         pollingTask = Task {
+            // Exponential backoff on consecutive failures (#29).
+            // Base interval: 5s. Doubles per failure up to a 120s cap.
+            // Resets to 5s immediately on success.
+            var consecutiveFailures = 0
             while !Task.isCancelled {
-                await fetchStatus()
-                try? await Task.sleep(nanoseconds: 5_000_000_000) // 5s poll
+                let success = await fetchStatus()
+                if success {
+                    consecutiveFailures = 0
+                } else {
+                    consecutiveFailures += 1
+                }
+                // delay = 5s * 2^(failures-1), capped at 120s, minimum 5s
+                let delay = consecutiveFailures == 0
+                    ? 5.0
+                    : min(5.0 * pow(2.0, Double(consecutiveFailures - 1)), 120.0)
+                let delayNs = UInt64(delay * 1_000_000_000)
+                try? await Task.sleep(nanoseconds: delayNs)
             }
         }
     }
 
     // MARK: - API Calls
 
-    func fetchStatus() async {
+    /// Fetches the current gateway status. Returns `true` on success, `false` on any failure.
+    @discardableResult
+    func fetchStatus() async -> Bool {
         guard !host.isEmpty else {
             connectionState = .disconnected
-            return
+            return false
         }
 
         // Try the dedicated /api/clawview/status endpoint first
@@ -87,6 +103,7 @@ class GatewayService: ObservableObject {
             lastHeartbeat = Date()
             connectionState = .localNetwork
             errorMessage = nil
+            return true
         } catch {
             // Try fallback
             do {
@@ -95,9 +112,11 @@ class GatewayService: ObservableObject {
                 lastHeartbeat = Date()
                 connectionState = .localNetwork
                 errorMessage = nil
+                return true
             } catch {
                 connectionState = .disconnected
                 errorMessage = error.localizedDescription
+                return false
             }
         }
     }
