@@ -247,7 +247,10 @@ struct ExpandedAgentDetail: View {
                     .fill(Color(NSColor.quaternarySystemFill))
             )
         }
-        .animation(.easeOut(duration: 0.2).delay(0.05), value: true)
+        // Fixed: was `.animation(..., value: true)` — constant never changes so animation never fires (#18)
+        // Now driven by the parent's isExpanded toggle, which passes through via re-render.
+        // The transition on the `if isExpanded` block in AgentCardView handles the actual animation.
+        // This modifier is removed to avoid the dead animation conflicting with the spring transition.
     }
 
     @ViewBuilder
