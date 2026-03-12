@@ -564,10 +564,13 @@ function parseSessionFile(sessionFile) {
         const content = msg.content;
         const usage = msg.usage;
 
-        // Extract cost from usage
+        // Extract cost from usage — only capture non-zero values.
+        // The Gateway often returns usage.cost.total = 0 for subagent sessions
+        // (billing handled at the provider level, not per-message). Zero is not
+        // meaningful here and blocks the token-based fallback below.
         if (!result.cost && usage && usage.cost) {
           const total = usage.cost.total;
-          if (typeof total === 'number') {
+          if (typeof total === 'number' && total > 0) {
             result.cost = total;
           }
         }
@@ -836,9 +839,11 @@ function getAgentStatusV2(agentId) {
   }
 
   // ── Session cost ───────────────────────────────────────────────────────────
-  // Accumulate cost from session metadata if available
+  // Accumulate cost from session metadata if available.
+  // Fall back to token-based estimate when JSONL cost is null OR zero.
+  // Zero means the Gateway didn't populate cost (common for subagent sessions).
   let costUsd = parsed.cost;
-  if (costUsd === null && bestSession.inputTokens) {
+  if ((costUsd === null || costUsd === 0) && bestSession.inputTokens) {
     // Rough estimate: claude-4-x pricing ~$3/M input, ~$15/M output
     const inputCost = (bestSession.inputTokens || 0) / 1_000_000 * 3.0;
     const outputCost = (bestSession.outputTokens || 0) / 1_000_000 * 15.0;
