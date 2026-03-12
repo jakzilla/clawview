@@ -653,7 +653,9 @@ function getAgentStatusV2(agentId) {
   let sessions = {};
   if (fs.existsSync(sessionsFile)) {
     try {
-      sessions = JSON.parse(fs.readFileSync(sessionsFile, 'utf8'));
+      // Guard: JSON.parse can return null/string/array — ensure we always have a plain object.
+      // Object.entries(null) throws TypeError; || {} prevents that edge case.
+      sessions = JSON.parse(fs.readFileSync(sessionsFile, 'utf8')) || {};
     } catch (e) {
       // Corrupted sessions.json — treat as empty, agent will show idle
     }
