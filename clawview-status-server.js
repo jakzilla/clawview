@@ -161,7 +161,7 @@ const AGENT_META = {
 // ─── Thresholds ──────────────────────────────────────────────────────────────
 
 // An agent is "active" (not just idle) if its last session activity was within this window
-const ACTIVE_WINDOW_MS        = 2 * 60 * 1000;   // 2 minutes — session must be live-ish to show active
+const ACTIVE_WINDOW_MS        = 5 * 60 * 1000;   // 5 minutes — LLM inference + tool chains can go quiet for 2-5 min
 // Within an active session, flag as "stuck" if silent for this long
 const STUCK_THRESHOLD_MS      = 10 * 60 * 1000;  // 10 minutes (per spec)
 // If idle for more than this, show generic idle text rather than last message
