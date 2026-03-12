@@ -31,8 +31,8 @@ struct AgentCardView: View {
                         .font(.caption)
                         .foregroundColor(Color(NSColor.tertiaryLabelColor))
 
-                    // Activity
-                    Text(agent.isActive ? agent.activity : "Idle")
+                    // Activity — use sanitised text to avoid emoji causing line-height variance (#41)
+                    Text(agent.isActive ? displayActivity : "Idle")
                         .font(.subheadline)
                         .foregroundColor(agent.isActive ? .primary : Color(NSColor.tertiaryLabelColor))
                         .lineLimit(2)
@@ -126,6 +126,27 @@ struct AgentCardView: View {
     }
 
     // MARK: - Helpers
+
+    /// Activity text sanitised for display (#41).
+    ///
+    /// Strips trailing emoji from activity strings. Emoji in body text renders at a
+    /// different line metric than surrounding text (larger ascender), causing the
+    /// activity row to be taller than adjacent rows — breaking visual alignment.
+    ///
+    /// Matches Unicode emoji ranges including variation selectors and ZWJ sequences
+    /// via a regex on the trailing portion of the string.
+    private var displayActivity: String {
+        agent.activity
+            .trimmingCharacters(in: .whitespaces)
+            // Strip trailing emoji (including variation selectors U+FE0F, ZWJ U+200D,
+            // and common emoji ranges U+1F000–1FFFF and U+2600–27FF)
+            .replacingOccurrences(
+                of: #"\s*[\u{1F000}-\u{1FFFF}\u{2600}-\u{27FF}\u{FE00}-\u{FE0F}\u{200D}]+\s*$"#,
+                with: "",
+                options: .regularExpression
+            )
+            .trimmingCharacters(in: .whitespaces)
+    }
 
     private var formattedDuration: String {
         let secs = agent.durationSeconds
