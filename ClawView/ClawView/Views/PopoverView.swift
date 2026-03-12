@@ -113,11 +113,14 @@ struct PopoverHeaderView: View {
 
     /// Resolves the best available display name for the connected host (#28).
     /// Priority: user display name > cleaned hostname > raw hostname > "OpenClaw"
+    ///
+    /// connectionManager is optional to allow SwiftUI previews to construct
+    /// PopoverHeaderView without a full ConnectionManager instance.
     private var resolvedDisplayName: String {
         // 1. User-configured display name takes priority
-        if let userDisplay = connectionManager?.settings.displayName,
-           !userDisplay.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return userDisplay.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let userDisplay = connectionManager?.settings.displayName {
+            let trimmed = userDisplay.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
         }
         // 2. Clean the raw hostname from the API
         if let raw = gateway.systemStatus?.hostname {
