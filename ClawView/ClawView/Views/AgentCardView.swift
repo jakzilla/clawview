@@ -67,7 +67,8 @@ struct AgentCardView: View {
                     // Idle agents: show "Last active X ago" instead
                     if agent.isActive && agent.durationSeconds > 0 {
                         HStack(spacing: 4) {
-                            Image(systemName: "clock")
+                            // clock.arrow.circlepath communicates "time ago" not "elapsed duration" (#85)
+                            Image(systemName: "clock.arrow.circlepath")
                                 .font(.system(size: 10))
                                 .foregroundColor(Color(NSColor.tertiaryLabelColor))
 
@@ -184,13 +185,15 @@ struct AgentCardView: View {
             .trimmingCharacters(in: .whitespaces)
     }
 
+    /// duration_seconds = time since last activity, NOT session duration.
+    /// Display as "Xm ago" / "Xh ago" to make this clear to the reader (#85).
     private var formattedDuration: String {
         let secs = agent.durationSeconds
-        if secs < 60 { return "\(secs)s" }
+        if secs < 60 { return "\(secs)s ago" }
         let mins = secs / 60
-        if mins < 60 { return "\(mins) min" }
+        if mins < 60 { return "\(mins)m ago" }
         let hours = mins / 60
-        return "\(hours)h \(mins % 60)m"
+        return "\(hours)h \(mins % 60)m ago"
     }
 
     private var healthColor: Color {
