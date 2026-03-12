@@ -110,7 +110,7 @@ class GatewayService: ObservableObject {
             let status = try await fetchClawViewStatus()
             systemStatus = status
             lastHeartbeat = Date()
-            connectionState = .localNetwork
+            connectionState = inferConnectionState(for: host)  // #37: detect tunnel vs local
             errorMessage = nil
             return true
         } catch {
@@ -119,7 +119,7 @@ class GatewayService: ObservableObject {
                 let status = try await buildStatusFromSessions()
                 systemStatus = status
                 lastHeartbeat = Date()
-                connectionState = .localNetwork
+                connectionState = inferConnectionState(for: host)  // #37: detect tunnel vs local
                 errorMessage = nil
                 return true
             } catch {
@@ -293,6 +293,46 @@ class GatewayService: ObservableObject {
     var heartbeatIsStale: Bool {
         guard let lastHeartbeat = lastHeartbeat else { return true }
         return Date().timeIntervalSince(lastHeartbeat) > 300
+    }
+
+    // MARK: - Connection State Inference (#37)
+
+    /// Infers whether a connection to `host` is local or tunnelled (#37).
+    ///
+    /// Rules:
+    /// - localhost / 127.0.0.1                    → .localNetwork
+    /// - RFC1918: 192.168.x.x, 10.x.x.x,
+    ///            172.16-31.x.x                   → .localNetwork
+    /// - Tailscale CGNAT range: 100.64.x.x–
+    ///   100.127.x.x (standard Tailscale alloc)   → .sshTunnel (blue)
+    /// - .local mDNS hostnames (Bonjour)          → .localNetwork
+    /// - Anything else (public IP, non-local name) → .sshTunnel
+    ///
+    /// Named "infer" because we can't truly know the path — this is a
+    /// best-effort heuristic based on address ranges.
+    private func inferConnectionState(for host: String) -> ConnectionState {
+        if host == "localhost" || host == "127.0.0.1" { return .localNetwork }
+        // Bonjour .local hostnames are always LAN
+        if host.hasSuffix(".local") { return .localNetwork }
+        // RFC1918 ranges
+        if host.hasPrefix("192.168.") { return .localNetwork }
+        if host.hasPrefix("10.") { return .localNetwork }
+        // 172.16.0.0–172.31.255.255 — parse the second octet
+        if host.hasPrefix("172.") {
+            let parts = host.split(separator: ".")
+            if parts.count >= 2, let second = Int(parts[1]), (16...31).contains(second) {
+                return .localNetwork
+            }
+        }
+        // Tailscale CGNAT range: 100.64.x.x – 100.127.x.x
+        if host.hasPrefix("100.") {
+            let parts = host.split(separator: ".")
+            if parts.count >= 2, let second = Int(parts[1]), (64...127).contains(second) {
+                return .sshTunnel
+            }
+        }
+        // Everything else: public IP or non-local hostname — treat as tunnel
+        return .sshTunnel
     }
 
     // MARK: - Hostname Humanisation (#28)
