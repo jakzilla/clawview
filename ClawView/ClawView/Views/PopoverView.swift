@@ -7,6 +7,14 @@ struct PopoverView: View {
     @ObservedObject var connectionManager: ConnectionManager
     @State private var showSettings = false
 
+    /// Whether the view is currently displayed in a floating panel (#63).
+    /// When true, the header shows a lit pin icon.
+    var isPinned: Bool = false
+
+    /// Callback invoked when the user taps the pin button (#63).
+    /// The caller (AppDelegate) handles the actual panel/popover transition.
+    var onPinToggled: (() -> Void)? = nil
+
     var body: some View {
         VStack(spacing: 0) {
             if showSettings {
@@ -27,7 +35,12 @@ struct PopoverView: View {
     private var mainContent: some View {
         VStack(spacing: 0) {
             // Header — pass connectionManager so header can read display name (#28)
-            PopoverHeaderView(gateway: gateway, connectionManager: connectionManager)
+            PopoverHeaderView(
+                gateway: gateway,
+                connectionManager: connectionManager,
+                isPinned: isPinned,
+                onPinToggled: onPinToggled
+            )
 
             // Body
             if gateway.connectionState == .disconnected {
@@ -51,6 +64,10 @@ struct PopoverHeaderView: View {
     @ObservedObject var gateway: GatewayService
     /// Connection settings, used to read the user-configured display name (#28).
     var connectionManager: ConnectionManager? = nil
+    /// Whether the view is currently in floating panel mode (#63).
+    var isPinned: Bool = false
+    /// Called when the user taps the pin button (#63).
+    var onPinToggled: (() -> Void)? = nil
     @State private var heartbeatAge: String = "–"
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -70,6 +87,16 @@ struct PopoverHeaderView: View {
                     .foregroundColor(.primary)
 
                 Spacer()
+
+                // Pin button — detach popover into floating panel (#63)
+                Button(action: { onPinToggled?() }) {
+                    Image(systemName: isPinned ? "pin.fill" : "pin")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(isPinned ? Color(NSColor.controlAccentColor) : Color(NSColor.tertiaryLabelColor))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isPinned ? "Unpin — return to popover" : "Pin — keep window open")
+                .help(isPinned ? "Unpin (return to popover)" : "Pin (keep window open)")
 
                 // "Updated X ago" — plain language, not "Last beat" jargon (#12)
                 HStack(spacing: 2) {
