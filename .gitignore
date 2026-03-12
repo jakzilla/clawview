@@ -51,3 +51,7 @@ logs/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+# Local scripts with credentials
+update-webhook-url.sh
+github-webhook-relay.js
