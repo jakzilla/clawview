@@ -168,19 +168,20 @@ struct ExpandedAgentDetail: View {
                     sectionHeader("RECENT ACTIVITY")
                     Divider()
 
-                    if agent.recentActivity.isEmpty {
+                    if agent.filteredRecentActivity.isEmpty {
                         Text("No recent activity")
                             .font(.caption)
                             .foregroundColor(Color(NSColor.tertiaryLabelColor))
                     } else {
-                        ForEach(agent.recentActivity.suffix(8)) { entry in
+                        ForEach(agent.filteredRecentActivity.suffix(8)) { entry in
                             HStack(alignment: .top, spacing: 8) {
                                 Text(entry.formattedTime)
                                     .font(.system(.caption, design: .monospaced))
                                     .foregroundColor(Color(NSColor.tertiaryLabelColor))
                                     .frame(width: 40, alignment: .leading)
 
-                                Text(entry.text)
+                                // cleanedText is non-nil for every entry in filteredRecentActivity
+                                Text(entry.cleanedText ?? entry.text)
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                     .lineLimit(2)
