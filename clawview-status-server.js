@@ -346,8 +346,19 @@ function humaniseToolCall(name, args) {
       if (firstWord === 'rm' || firstWord === 'trash') return 'Removing files';
       if (firstWord === 'mkdir') return 'Creating directory';
       if (firstWord === 'ls' || firstWord === 'find') return 'Listing files';
-      if (firstWord === 'cat' || firstWord === 'head' || firstWord === 'tail') return 'Reading file';
-      if (firstWord === 'grep' || firstWord === 'rg') return 'Searching files';
+      if (firstWord === 'cat' || firstWord === 'head' || firstWord === 'tail') {
+        // #127 — extract filename for more specific activity ("Reading server.js" not "Reading file")
+        const fileArg = effective.split(/\s+/).slice(1).find(p => !p.startsWith('-') && p.length > 0);
+        const fname = fileArg ? path.basename(fileArg) : '';
+        return fname ? `Reading ${fname}` : 'Reading file';
+      }
+      if (firstWord === 'grep' || firstWord === 'rg') {
+        // #127 — show the file being searched when available
+        const parts = effective.split(/\s+/);
+        const fileArg = parts.slice(1).find(p => !p.startsWith('-') && p.length > 0 && p !== parts[1]);
+        const fname = fileArg ? path.basename(fileArg) : '';
+        return fname ? `Searching ${fname}` : 'Searching files';
+      }
       if (firstWord === 'open') return 'Opening application';
 
       // System
