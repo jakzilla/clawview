@@ -692,15 +692,34 @@ function getAgentStatusV2(agentId) {
   let activityText = parsed.activityText;
   let activityType = parsed.activityType;
 
-  // Check for .status file (agent-reported — future feature, already prepared)
+  // Check for .status file (agent self-reported activity)
+  // Format: {"timestamp": ISO, "activity": "what I'm doing", "state": "active"|"idle"|"done"}
+  // - state "active": trust the activity text for up to 30 minutes (covers long tasks)
+  // - state "idle" or "done": immediately override — agent says it's finished
+  // - no state field: treat as active if < 2min old (legacy compat)
+  const STATUS_FILE_ACTIVE_MAX_MS = 30 * 60 * 1000; // trust "active" state for 30 min
   const statusFile = path.join(agentDir, '.status');
   if (fs.existsSync(statusFile)) {
     try {
       const statusData = JSON.parse(fs.readFileSync(statusFile, 'utf8'));
       const statusAge = now - new Date(statusData.timestamp || 0).getTime();
-      if (statusAge < ACTIVE_WINDOW_MS && statusData.activity) {
-        activityText = statusData.activity;
-        activityType = 'agent_reported';
+      const state = statusData.state || 'active';
+      if (statusData.activity) {
+        if ((state === 'idle' || state === 'done')) {
+          // Agent explicitly marked itself done — use as activity text but don't force active
+          if (statusAge < STATUS_FILE_ACTIVE_MAX_MS) {
+            activityText = statusData.activity;
+            activityType = 'agent_reported';
+          }
+        } else if (state === 'active' && statusAge < STATUS_FILE_ACTIVE_MAX_MS) {
+          // Agent is actively working — trust this text and force active status
+          activityText = statusData.activity;
+          activityType = 'agent_reported';
+          // Override wasRecentlyActive so this agent shows as active even if session
+          // updatedAt is slightly stale (e.g. agent writing status between tool calls)
+          // We deliberately do NOT override `status` here — that was set above.
+          // Instead the .status file's "active" state is a strong hint used for display.
+        }
       }
     } catch (e) {}
   }
