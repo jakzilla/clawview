@@ -196,15 +196,28 @@ struct ExpandedAgentDetail: View {
                         sectionHeader("SUB-AGENTS")
                         Divider()
 
-                        ForEach(agent.subAgents) { sub in
+                        ForEach(Array(agent.subAgents.enumerated()), id: \.element.id) { index, sub in
                             HStack(spacing: 6) {
                                 // Dot colour reflects actual status — not hardcoded green (#5)
                                 Circle()
                                     .fill(subAgentStatusColor(sub.status))
                                     .frame(width: 6, height: 6)
 
-                                // Label with fallback for generic "sub-agent" entries (#5)
-                                Text(sub.label == "sub-agent" ? "Sub-agent" : sub.label)
+                                // Label: use API label if it has real content; otherwise
+                                // fall back to "Sub-agent N" with ordinal (#27).
+                                // The ordinal makes multiple anonymous sub-agents distinguishable
+                                // until the Gateway emits task-derived labels.
+                                let displayLabel: String = {
+                                    let raw = sub.label.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    let isGeneric = raw.isEmpty || raw.lowercased() == "sub-agent"
+                                    if isGeneric {
+                                        return "Sub-agent \(index + 1)"
+                                    }
+                                    // Capitalise first letter for display consistency
+                                    return raw.prefix(1).uppercased() + raw.dropFirst()
+                                }()
+
+                                Text(displayLabel)
                                     .font(.caption)
                                     .foregroundColor(.secondary)
 
