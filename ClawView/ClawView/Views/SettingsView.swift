@@ -1,4 +1,5 @@
 import SwiftUI
+import ServiceManagement
 
 // MARK: - Settings View
 
@@ -10,6 +11,8 @@ struct SettingsView: View {
     @State private var portString: String = ""
     @State private var useMock: Bool = false
     @State private var displayName: String = ""
+    /// Launch at Login toggle state — read from SMAppService on appear (#33).
+    @State private var launchAtLogin: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -44,6 +47,33 @@ struct SettingsView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+
+                    // General section (#33) — Launch at Login
+                    // SMAppService is available on macOS 13+. Below 13 the toggle
+                    // is hidden to avoid showing broken UI.
+                    if #available(macOS 13.0, *) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("GENERAL")
+                                .font(.system(.caption, weight: .semibold))
+                                .foregroundColor(.secondary)
+                                .tracking(0.5)
+
+                            Toggle("Launch at Login", isOn: $launchAtLogin)
+                                .font(.subheadline)
+                                .padding(12)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(Color(NSColor.quaternarySystemFill))
+                                )
+                                .onChange(of: launchAtLogin) { enabled in
+                                    if enabled {
+                                        try? SMAppService.mainApp.register()
+                                    } else {
+                                        try? SMAppService.mainApp.unregister()
+                                    }
+                                }
+                        }
+                    }
 
                     // Connection section
                     VStack(alignment: .leading, spacing: 12) {
@@ -135,6 +165,10 @@ struct SettingsView: View {
             portString = String(connectionManager.settings.port)
             useMock = connectionManager.settings.useMockData
             displayName = connectionManager.settings.displayName
+            // Read current launch-at-login state from SMAppService (#33)
+            if #available(macOS 13.0, *) {
+                launchAtLogin = SMAppService.mainApp.status == .enabled
+            }
         }
     }
 }
