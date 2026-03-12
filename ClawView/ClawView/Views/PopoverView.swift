@@ -82,6 +82,23 @@ struct PopoverHeaderView: View {
             .padding(.vertical, 12)
             .frame(height: 56)
 
+            // Stale data warning banner (#43) — shown when no gateway response for > 5 minutes.
+            // heartbeatIsStale is a computed var on GatewayService (> 300s).
+            if gateway.heartbeatIsStale {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Data may be outdated — last updated \(heartbeatAge) ago")
+                        .font(.caption2)
+                        .lineLimit(1)
+                }
+                .foregroundColor(Color(NSColor.systemYellow))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 5)
+                .background(Color(NSColor.systemYellow).opacity(0.12))
+            }
+
             Divider()
         }
         .onReceive(timer) { _ in
