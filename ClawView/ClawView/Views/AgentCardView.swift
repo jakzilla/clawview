@@ -78,14 +78,14 @@ struct AgentCardView: View {
 
                 Spacer()
 
-                // Chevron (#39)
+                // Chevron — visual only; the card HStack uses accessibilityElement(children: .ignore)
+                // so VoiceOver reads the combined card label instead of individual children (#39).
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12))
                     .foregroundColor(Color(NSColor.tertiaryLabelColor))
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isExpanded)
-                    .accessibilityLabel(isExpanded ? "Collapse" : "Expand")
-                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHidden(true)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
