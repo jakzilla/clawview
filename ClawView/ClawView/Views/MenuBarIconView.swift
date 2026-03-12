@@ -145,12 +145,11 @@ class MenuBarIconController: NSObject {
     // MARK: - Image Generation
 
     private func menuBarImage(for state: IconState) -> NSImage {
-        // Use pawprint.fill as a placeholder — reads as "claw/grip".
-        // TODO: replace with custom lobster claw SVG asset when available (#1).
-        // macOS handles light/dark mode via template rendering (isTemplate = true).
-        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-        if let image = NSImage(systemSymbolName: "pawprint.fill", accessibilityDescription: "ClawView") {
-            return image.withSymbolConfiguration(config) ?? image
+        // Use the custom claw asset from the asset catalogue.
+        // Template rendering intent is set in Contents.json so macOS handles
+        // light/dark mode automatically when isTemplate = true.
+        if let image = NSImage(named: "MenuBarIcon") {
+            return image
         }
 
         // Fallback: draw a simple claw icon programmatically
