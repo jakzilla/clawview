@@ -66,10 +66,16 @@ struct SettingsView: View {
                                         .fill(Color(NSColor.quaternarySystemFill))
                                 )
                                 .onChange(of: launchAtLogin) { enabled in
-                                    if enabled {
-                                        try? SMAppService.mainApp.register()
-                                    } else {
-                                        try? SMAppService.mainApp.unregister()
+                                    // If SMAppService call fails, revert toggle
+                                    // so UI doesn't show a false state (#33 Codex review)
+                                    do {
+                                        if enabled {
+                                            try SMAppService.mainApp.register()
+                                        } else {
+                                            try SMAppService.mainApp.unregister()
+                                        }
+                                    } catch {
+                                        launchAtLogin = !enabled
                                     }
                                 }
                         }
