@@ -270,14 +270,37 @@ function cleanActivityText(raw) {
   // 2. CONVERSATION: "Linus is on it!", "Let me check that...", "Done — committed."
   //
   // For ClawView, we only want (1). If we can't get a clean work description,
-  // we fall through to "Thinking..." rather than show a chat excerpt.
+  // we fall through to tool_call text rather than show a chat excerpt.
   //
-  // Rule: Accept ONLY if text starts with a present-tense action verb (gerund).
-  // Everything else is conversation → return null → caller uses "Thinking..."
+  // Accept:
+  //   - Present-tense gerund action verbs (most common in subagent narration)
+  //   - "Let me ..." / "I'll ..." / "I'm ..." task-framing phrases (pre-action narration)
+  //   - "Now ..." / "Next ..." / "Starting ..." phrases
+  // Reject: all other conversational text.
 
-  const actionVerbPattern = /^(reading|writing|running|building|checking|reviewing|updating|creating|editing|spawning|fetching|searching|analysing|analyzing|deploying|testing|fixing|refactoring|installing|configuring|loading|processing|parsing|generating|compiling|linking|downloading|uploading|scanning|auditing|committing|pushing|pulling|cloning)/i;
+  const actionVerbPattern = /^(reading|writing|running|building|checking|reviewing|updating|creating|editing|spawning|fetching|searching|analysing|analyzing|deploying|testing|fixing|refactoring|installing|configuring|loading|processing|parsing|generating|compiling|linking|downloading|uploading|scanning|auditing|committing|pushing|pulling|cloning|implementing|opening|closing|merging|diffing|linting|formatting|migrating|seeding|initialising|initializing|starting|stopping|restarting|debugging|tracing|profiling|benchmarking|validating|verifying|confirming|completing|finishing|handling|applying|patching|reverting|tagging|releasing|publishing|archiving)/i;
 
-  if (!actionVerbPattern.test(text)) return null;
+  // Also accept narration patterns that appear at start of subagent work descriptions
+  const narrationPattern = /^(let me|i'll|i will|i'm going to|now |next |starting |beginning |first |step \d|working on|implementing|going to|about to)/i;
+
+  if (!actionVerbPattern.test(text) && !narrationPattern.test(text)) return null;
+
+  // Strip leading narration fluff ("Let me ", "I'll ", "I'm going to ") to get
+  // the core action. This makes the display more compact and consistent.
+  text = text
+    .replace(/^let me\s+/i, '')
+    .replace(/^i'll\s+/i, '')
+    .replace(/^i will\s+/i, '')
+    .replace(/^i'm going to\s+/i, '')
+    .replace(/^i'm\s+/i, '')
+    .replace(/^going to\s+/i, '')
+    .replace(/^about to\s+/i, '')
+    .trim();
+
+  // Capitalise first letter after stripping
+  if (text.length > 0) {
+    text = text.charAt(0).toUpperCase() + text.slice(1);
+  }
 
   return text.slice(0, 100).trim();
 }
@@ -382,17 +405,30 @@ function parseSessionFile(sessionFile) {
           }
         }
 
-        // For the activity text: prefer meaningful assistant text > tool call > fallback
-        // Assistant text often has better context ("Reading SPEC.md", "Reviewing PR diff")
-        // than a raw tool call label. But only if it passes the action-verb filter.
+        // For the activity text: prefer specific tool call > meaningful text > fallback.
+        //
+        // Tool calls are always accurate (e.g. "Building Xcode project", "Pushing to GitHub")
+        // because they come from the humaniseToolCall mapper which has full context.
+        // Assistant text may still be conversational even after filtering.
+        //
+        // Exception: if the tool call is generic ("Working...") AND we have meaningful
+        // assistant text, use the text instead.
         if (!foundActivity) {
-          if (messageText) {
-            // Meaningful text beats a generic tool call like "Running command"
+          const isGenericToolCall = messageToolCall === 'Working...' || messageToolCall === 'Running command';
+          if (messageToolCall && !isGenericToolCall) {
+            // Specific, humanised tool call — most reliable signal
+            result.activityText = messageToolCall;
+            result.activityType = 'tool_call';
+            result.lastActivityMs = ts || now;
+            foundActivity = true;
+          } else if (messageText) {
+            // Meaningful assistant narration (passed action-verb filter)
             result.activityText = messageText;
             result.activityType = 'inferred';
             result.lastActivityMs = ts || now;
             foundActivity = true;
           } else if (messageToolCall) {
+            // Generic tool call — better than nothing
             result.activityText = messageToolCall;
             result.activityType = 'tool_call';
             result.lastActivityMs = ts || now;
@@ -453,14 +489,14 @@ function getAgentStatusV2(agentId) {
     return null;
   }
 
-  // Find the most recent non-subagent, non-cron main session
+  // Find the most recently updated session regardless of type.
+  // Subagent and cron sessions ARE valid work — if Linus is doing work via a
+  // spawned subagent, that IS Linus working and should show as active.
   let bestKey = null;
   let bestSession = null;
   let bestUpdatedAt = 0;
 
   for (const [key, session] of Object.entries(sessions)) {
-    // Skip subagent and cron sessions
-    if (key.includes('subagent') || key.includes('cron')) continue;
     const updatedAt = session.updatedAt || 0;
     if (updatedAt > bestUpdatedAt) {
       bestUpdatedAt = updatedAt;
