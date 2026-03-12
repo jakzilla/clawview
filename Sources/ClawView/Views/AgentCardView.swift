@@ -146,7 +146,8 @@ struct AgentCardView: View {
         let mins = secs / 60
         if mins < 60 { return "\(mins) min" }
         let hours = mins / 60
-        return "\(hours)h \(mins % 60)m"
+        let remainingMins = mins % 60
+        return remainingMins == 0 ? "\(hours)h" : "\(hours)h \(remainingMins)m"
     }
 
     private var healthColor: Color {

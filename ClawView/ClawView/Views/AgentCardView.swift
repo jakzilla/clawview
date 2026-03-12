@@ -193,7 +193,8 @@ struct AgentCardView: View {
         let mins = secs / 60
         if mins < 60 { return "\(mins)m ago" }
         let hours = mins / 60
-        return "\(hours)h \(mins % 60)m ago"
+        let remainingMins = mins % 60
+        return remainingMins == 0 ? "\(hours)h ago" : "\(hours)h \(remainingMins)m ago"
     }
 
     private var healthColor: Color {
