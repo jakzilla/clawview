@@ -64,7 +64,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func setupPopover() {
         let popover = NSPopover()
-        popover.contentSize = NSSize(width: 320, height: 400)
+        // Fixed height: ScrollView with maxHeight:540 handles variable content (#38).
+        // Dynamic sizing via updatePopoverSize() was using a wrong 80pt-per-card
+        // constant, causing clips and blank space. Let SwiftUI layout win.
+        popover.contentSize = NSSize(width: 320, height: 540)
         popover.behavior = .transient
         popover.animates = true
 
@@ -157,25 +160,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let button = statusItem?.button,
               let popover = popover else { return }
 
-        // Recalculate content height based on agent count
-        updatePopoverSize()
-
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         NSApp.activate(ignoringOtherApps: true)
     }
 
     func closePopover() {
         popover?.performClose(nil)
-    }
-
-    private func updatePopoverSize() {
-        let agentCount = gateway.allAgents.count
-        let cardHeight = 80 // approx per card
-        let headerHeight = 56
-        let footerHeight = 44
-        let bodyHeight = max(100, min(agentCount * cardHeight + 16, 392))
-        let totalHeight = headerHeight + bodyHeight + footerHeight
-        popover?.contentSize = NSSize(width: 320, height: totalHeight)
     }
 
     // MARK: - Reactive Icon Updates (#16)
