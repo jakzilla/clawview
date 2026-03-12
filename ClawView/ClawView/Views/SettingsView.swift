@@ -193,10 +193,11 @@ struct FirstRunView: View {
             Divider().opacity(0)
 
             VStack(spacing: 20) {
-                // Icon — pawprint.fill placeholder until custom claw asset is ready (#1)
-                Image(systemName: "pawprint.fill")
+                // Icon — lobster emoji as interim branding (#34).
+                // pawprint.fill was never appropriate (evokes pet app).
+                // Replace with custom claw SVG asset when it ships (see icon issue #40).
+                Text("🦞")
                     .font(.system(size: 48))
-                    .foregroundColor(Color(NSColor.controlAccentColor))
                     .padding(.top, 24)
 
                 VStack(spacing: 6) {
