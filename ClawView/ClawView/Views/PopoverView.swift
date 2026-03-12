@@ -197,10 +197,25 @@ struct PopoverHeaderView: View {
 struct AgentListView: View {
     @ObservedObject var gateway: GatewayService
 
+    /// Set to true after the first successful data fetch (#132).
+    /// Prevents the "All quiet" moon from flashing during the ~5s initial load.
+    @State private var hasLoadedOnce: Bool = false
+
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                if gateway.allAgents.isEmpty {
+                if gateway.allAgents.isEmpty && !hasLoadedOnce {
+                    // Loading state — shown until first successful response (#132)
+                    VStack(spacing: 8) {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Loading…")
+                            .font(.subheadline)
+                            .foregroundColor(Color(NSColor.tertiaryLabelColor))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 32)
+                } else if gateway.allAgents.isEmpty {
                     IdleStateView()
                 } else {
                     LazyVStack(spacing: 0) {
@@ -219,6 +234,15 @@ struct AgentListView: View {
         }
         .frame(maxHeight: 540) // 640 - 56 (header) - 44 (footer) — v1.1 height fix
         .scrollIndicators(.hidden)
+        // Mark first load complete as soon as gateway responds (#132)
+        // Use lastHeartbeat as the signal — it's set on every successful fetch
+        .onChange(of: gateway.lastHeartbeat) { _ in
+            if !hasLoadedOnce { hasLoadedOnce = true }
+        }
+        .onAppear {
+            // If already loaded before this view appeared (e.g. popover re-opened), don't re-show loader
+            if gateway.lastHeartbeat != nil { hasLoadedOnce = true }
+        }
     }
 }
 
