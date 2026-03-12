@@ -169,6 +169,19 @@ const IDLE_TEXT_THRESHOLD_MS  = 60 * 60 * 1000;  // 1 hour
 
 // ─── Tool call → human text ──────────────────────────────────────────────────
 
+// Shared map for gog CLI subcommands → human strings.
+// Used by both the exec firstWord handler (shell: "gog gmail list") and the
+// 'gog' tool case (in case it appears as a named tool API call in future).
+// gog is a CLI tool (see skills/gog/SKILL.md) so the exec path is the real one.
+const GOG_SUBCOMMAND_MAP = {
+  gmail:    'Checking Gmail',
+  calendar: 'Checking calendar',
+  drive:    'Accessing Drive',
+  sheets:   'Working with Sheets',
+  docs:     'Working with Docs',
+  contacts: 'Checking contacts',
+};
+
 /**
  * Humanise a tool call name + arguments into a plain-English activity string.
  * Never returns raw tool names, file paths, or technical strings.
@@ -299,6 +312,12 @@ function humaniseToolCall(name, args) {
         return ghMap[`${sub} ${sub2}`] || ghMap[sub] || 'Running gh';
       }
 
+      // Google Workspace CLI
+      if (firstWord === 'gog') {
+        const sub = effective.split(/\s+/)[1] || '';
+        return GOG_SUBCOMMAND_MAP[sub] || 'Using Google Workspace';
+      }
+
       // File operations
       if (firstWord === 'cp') return 'Copying files';
       if (firstWord === 'mv') return 'Moving files';
@@ -323,12 +342,23 @@ function humaniseToolCall(name, args) {
       return 'Running command';
     }
 
-    // Web / search
+    // Web / search / fetch
     case 'web_search':
     case 'search':
     case 'brave_search': {
       const q = a.query || a.q || '';
       return q ? `Searching: ${q.slice(0, 40)}` : 'Searching the web';
+    }
+    case 'web_fetch': {
+      const url = a.url || '';
+      if (url) {
+        try {
+          const u = new URL(url);
+          const p = u.pathname.length > 1 ? u.pathname.slice(0, 30) : '';
+          return `Fetching ${u.hostname}${p}`;
+        } catch (e) { /* malformed URL — fall through to default */ }
+      }
+      return 'Fetching URL';
     }
 
     // Messaging
