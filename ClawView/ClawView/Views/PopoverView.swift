@@ -269,18 +269,7 @@ struct PopoverFooterView: View {
             Divider()
 
             HStack {
-                // Discord button — deep links to Clawdia's channel, not just open Discord (#17)
-                FooterButton(
-                    label: "Clawdia",
-                    icon: "arrow.up.forward.square",
-                    enabled: gateway.connectionState != .disconnected
-                ) {
-                    openClawdiaChannel()
-                }
-
-                // "Processes" removed — permanently disabled button is a broken promise (#6)
-                // Will return when process viewer is implemented in v1.1
-
+                // Clawdia Discord button removed (#68) — was failing silently
                 FooterButton(
                     label: "Settings",
                     icon: "gearshape",
@@ -290,15 +279,6 @@ struct PopoverFooterView: View {
             }
             .padding(.horizontal, 16)
             .frame(height: 44)
-        }
-    }
-
-    /// Deep link to Clawdia's Discord channel (#17)
-    private func openClawdiaChannel() {
-        let clawdiaChannelId = "1480700058067533886"
-        let guildId = "1480268359474126998"
-        if let url = URL(string: "discord://discord.com/channels/\(guildId)/\(clawdiaChannelId)") {
-            NSWorkspace.shared.open(url)
         }
     }
 }
