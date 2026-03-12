@@ -60,8 +60,8 @@ function getSubagentOwner(sessionFile) {
   let fd = null;
   try {
     fd = fs.openSync(sessionFile, 'r');
-    const buf = Buffer.alloc(16384); // first 16KB — task text can be up to ~8KB
-    const bytesRead = fs.readSync(fd, buf, 0, 16384, 0);
+    const buf = Buffer.alloc(65536); // first 64KB — skills preamble alone can be 40KB+, "You are Steve" appears after that
+    const bytesRead = fs.readSync(fd, buf, 0, 65536, 0);
     fs.closeSync(fd);
     fd = null; // prevent double-close in finally
     const text = buf.slice(0, bytesRead).toString('utf8');
