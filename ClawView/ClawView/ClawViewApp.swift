@@ -205,19 +205,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Launch at Login
-
-    func enableLaunchAtLogin() {
-        if #available(macOS 13.0, *) {
-            try? SMAppService.mainApp.register()
-        }
-    }
-
-    func disableLaunchAtLogin() {
-        if #available(macOS 13.0, *) {
-            try? SMAppService.mainApp.unregister()
-        }
-    }
+    // Launch at Login is now controlled by SettingsView directly via
+    // SMAppService.mainApp.register/unregister (#33). AppDelegate helpers removed.
 
     func applicationWillTerminate(_ notification: Notification) {
         if let monitor = eventMonitor {
