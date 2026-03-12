@@ -65,7 +65,7 @@ struct SettingsView: View {
                                 Text("Port")
                                     .font(.system(.caption, weight: .medium))
                                     .foregroundColor(.secondary)
-                                TextField("3917", text: $portString)
+                                TextField("7317", text: $portString)
                                     .textFieldStyle(.roundedBorder)
                                     .font(.body)
                             }
@@ -96,7 +96,7 @@ struct SettingsView: View {
                     // Save button
                     Button("Save & Connect") {
                         connectionManager.settings.host = host
-                        connectionManager.settings.port = Int(portString) ?? 3917
+                        connectionManager.settings.port = Int(portString) ?? 7317
                         connectionManager.settings.useMockData = useMock
                         connectionManager.saveAndConnect()
                         onDismiss()
@@ -128,7 +128,7 @@ struct FirstRunView: View {
     @ObservedObject var connectionManager: ConnectionManager
 
     @State private var host: String = "localhost"
-    @State private var portString: String = "3917"
+    @State private var portString: String = "7317"
     @State private var isSearching: Bool = false
 
     var body: some View {
@@ -168,7 +168,7 @@ struct FirstRunView: View {
                         Text("Port")
                             .font(.system(.caption, weight: .medium))
                             .foregroundColor(.secondary)
-                        TextField("3917", text: $portString)
+                        TextField("7317", text: $portString)
                             .textFieldStyle(.roundedBorder)
                     }
                 }
@@ -212,7 +212,7 @@ struct FirstRunView: View {
                 // Connect button
                 Button("Connect") {
                     connectionManager.settings.host = host
-                    connectionManager.settings.port = Int(portString) ?? 3917
+                    connectionManager.settings.port = Int(portString) ?? 7317
                     connectionManager.saveAndConnect()
                 }
                 .buttonStyle(.borderedProminent)

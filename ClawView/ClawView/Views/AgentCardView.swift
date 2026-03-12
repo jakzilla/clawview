@@ -19,18 +19,17 @@ struct AgentCardView: View {
                     .frame(width: 32, height: 32, alignment: .center)
 
                 // Text column
-                VStack(alignment: .leading, spacing: 4) {
-                    // Name + Role
-                    HStack(spacing: 4) {
-                        Text(agent.name)
-                            .font(.headline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.primary)
-                        Text("(\(agent.role))")
-                            .font(.headline)
-                            .fontWeight(.regular)
-                            .foregroundColor(.secondary)
-                    }
+                VStack(alignment: .leading, spacing: 2) {
+                    // Name — headline only. Role is shown as subordinate caption (#13)
+                    Text(agent.name)
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+
+                    // Role — small caption below name, not in parentheses (#13)
+                    Text(agent.role)
+                        .font(.caption)
+                        .foregroundColor(Color(NSColor.tertiaryLabelColor))
 
                     // Activity
                     Text(agent.isActive ? agent.activity : "Idle")
@@ -38,9 +37,11 @@ struct AgentCardView: View {
                         .foregroundColor(agent.isActive ? .primary : Color(NSColor.tertiaryLabelColor))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 2)
 
-                    // Duration + health
-                    if agent.isActive || agent.health != .idle {
+                    // Duration row — only for active agents with meaningful duration (#9, #15)
+                    // Idle agents: show "Last active X ago" instead
+                    if agent.isActive && agent.durationSeconds > 0 {
                         HStack(spacing: 4) {
                             Image(systemName: "clock")
                                 .font(.system(size: 10))
@@ -50,21 +51,25 @@ struct AgentCardView: View {
                                 .font(.system(.caption, design: .monospaced))
                                 .foregroundColor(Color(NSColor.tertiaryLabelColor))
 
-                            Text("·")
-                                .font(.caption)
-                                .foregroundColor(Color(NSColor.tertiaryLabelColor))
+                            // Health indicator — only for non-normal states (#14)
+                            // "Normal" adds no signal; silence IS the signal when healthy
+                            if agent.health != .normal && agent.health != .idle {
+                                Text("·")
+                                    .font(.caption)
+                                    .foregroundColor(Color(NSColor.tertiaryLabelColor))
 
-                            Circle()
-                                .fill(healthColor)
-                                .frame(width: 6, height: 6)
+                                Circle()
+                                    .fill(healthColor)
+                                    .frame(width: 6, height: 6)
 
-                            Text(healthLabel)
-                                .font(.system(.caption, weight: .medium))
-                                .foregroundColor(healthColor)
+                                Text(healthLabel)
+                                    .font(.system(.caption, weight: .medium))
+                                    .foregroundColor(healthColor)
+                            }
                         }
-                    } else {
+                    } else if !agent.isActive {
                         if let lastActivity = agent.lastActivity {
-                            Text("Last active: \(relativeTime(lastActivity))")
+                            Text("Last active \(relativeTime(lastActivity))")
                                 .font(.caption)
                                 .foregroundColor(Color(NSColor.tertiaryLabelColor))
                         }
@@ -133,10 +138,10 @@ struct AgentCardView: View {
 
     private var healthLabel: String {
         switch agent.health {
-        case .normal: return "Normal"
+        case .normal: return ""   // Not shown (#14)
         case .takingAWhile: return "Taking a while"
         case .stuck: return "Stuck"
-        case .idle: return "Idle"
+        case .idle: return ""     // Not shown
         }
     }
 
@@ -168,7 +173,6 @@ struct ExpandedAgentDetail: View {
                             .font(.caption)
                             .foregroundColor(Color(NSColor.tertiaryLabelColor))
                     } else {
-                        // Show up to 8 entries, most recent last
                         ForEach(agent.recentActivity.suffix(8)) { entry in
                             HStack(alignment: .top, spacing: 8) {
                                 Text(entry.formattedTime)
@@ -185,7 +189,7 @@ struct ExpandedAgentDetail: View {
                     }
                 }
 
-                // Sub-agents
+                // Sub-agents — with proper status colours and identity (#5)
                 if !agent.subAgents.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         sectionHeader("SUB-AGENTS")
@@ -193,40 +197,49 @@ struct ExpandedAgentDetail: View {
 
                         ForEach(agent.subAgents) { sub in
                             HStack(spacing: 6) {
+                                // Dot colour reflects actual status — not hardcoded green (#5)
                                 Circle()
-                                    .fill(Color(NSColor.systemGreen))
+                                    .fill(subAgentStatusColor(sub.status))
                                     .frame(width: 6, height: 6)
-                                Text(sub.label)
+
+                                // Label with fallback for generic "sub-agent" entries (#5)
+                                Text(sub.label == "sub-agent" ? "Sub-agent" : sub.label)
                                     .font(.caption)
                                     .foregroundColor(.secondary)
+
                                 Spacer()
-                                Text(formatDuration(sub.durationSeconds))
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundColor(Color(NSColor.tertiaryLabelColor))
+
+                                // Duration only meaningful for active sub-agents (#5)
+                                if sub.status == "active" {
+                                    Text(formatDuration(sub.durationSeconds))
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundColor(Color(NSColor.tertiaryLabelColor))
+                                } else {
+                                    Text("done")
+                                        .font(.caption)
+                                        .foregroundColor(Color(NSColor.tertiaryLabelColor))
+                                }
                             }
                         }
                     }
                 }
 
-                // Cost
-                if let cost = agent.cost {
+                // Cost — only shown if non-zero and meaningful (#4)
+                // $0.00 means "not tracked", not "free" — hide it
+                if let cost = agent.cost, cost.sessionTotal > 0.001 {
                     HStack {
-                        Text("Cost: $\(String(format: "%.2f", cost.sessionTotal))")
+                        Image(systemName: "dollarsign.circle")
+                            .font(.system(size: 10))
+                            .foregroundColor(Color(NSColor.tertiaryLabelColor))
+                        Text("$\(String(format: "%.2f", cost.sessionTotal)) this session")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         Spacer()
                     }
                 }
 
-                // Nudge button
-                Button("Nudge") {
-                    // v1.1 feature
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
-                .font(.system(.caption, weight: .medium))
-                .frame(height: 24)
-                .disabled(true) // Coming in v1.1
+                // Nudge button removed — disabled UI is a broken promise (#7)
+                // Will be re-added in v1.1 when Gateway routing is implemented
             }
             .padding(12)
             .background(
@@ -243,6 +256,15 @@ struct ExpandedAgentDetail: View {
             .font(.system(.caption, weight: .semibold))
             .foregroundColor(.secondary)
             .tracking(0.5)
+    }
+
+    /// Sub-agent status → dot colour (#5)
+    private func subAgentStatusColor(_ status: String) -> Color {
+        switch status {
+        case "active":  return Color(NSColor.systemGreen)
+        case "error":   return Color(NSColor.systemRed)
+        default:        return Color(NSColor.systemGray)  // idle, done, unknown
+        }
     }
 
     private func formatDuration(_ secs: Int) -> String {
