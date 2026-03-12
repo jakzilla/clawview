@@ -24,6 +24,128 @@ const { execSync } = require('child_process');
 const PORT = 7317;
 const AGENTS_DIR = path.join(os.homedir(), '.openclaw', 'agents');
 
+// Subagent sessions are always stored in main's sessions.json regardless of which
+// agent spawned them. We need to search here to find real activity for non-main agents.
+const MAIN_SESSIONS_FILE = path.join(AGENTS_DIR, 'main', 'sessions', 'sessions.json');
+
+// ─── Subagent session attribution ────────────────────────────────────────────
+
+/**
+ * Map from agent display names → agent IDs (used to match subagent task text).
+ * When a subagent is spawned with "You are Linus Clawvalds ⚙️, CTO" in the task,
+ * we match on the display name to attribute the session to the right agent.
+ */
+const AGENT_NAME_TO_ID = {
+  'Clawdia': 'main',
+  'Linus': 'dev',
+  'Steve': 'jony',
+  'Richard': 'marketing',
+  'Demis': 'research',
+  'Prawn': 'pa',
+  'Santa': 'intake',
+  'Krill': null, // QA sub-agent, not a top-level agent
+};
+
+// Regex derived from AGENT_NAME_TO_ID keys — single source of truth.
+const AGENT_NAMES_PATTERN = new RegExp(
+  'You are (' + Object.keys(AGENT_NAME_TO_ID).join('|') + ')'
+);
+
+/**
+ * Read the first user message from a session JSONL file and extract the agent
+ * name from "You are <Name>" patterns. Returns the agent ID string or null.
+ */
+function getSubagentOwner(sessionFile) {
+  if (!sessionFile || !fs.existsSync(sessionFile)) return null;
+  let fd = null;
+  try {
+    fd = fs.openSync(sessionFile, 'r');
+    const buf = Buffer.alloc(16384); // first 16KB — task text can be up to ~8KB
+    const bytesRead = fs.readSync(fd, buf, 0, 16384, 0);
+    fs.closeSync(fd);
+    fd = null; // prevent double-close in finally
+    const text = buf.slice(0, bytesRead).toString('utf8');
+    const lines = text.split('\n');
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let entry;
+      try { entry = JSON.parse(line); } catch (e) { continue; }
+      if (entry.type !== 'message') continue;
+      const msg = entry.message || {};
+      if (msg.role !== 'user') continue;
+      const content = msg.content;
+      let taskText = '';
+      if (Array.isArray(content)) {
+        taskText = (content.find(c => c.type === 'text') || {}).text || '';
+      } else if (typeof content === 'string') {
+        taskText = content;
+      }
+      // Match "You are Linus", "You are Steve", etc. (pattern derived from AGENT_NAME_TO_ID)
+      const m = taskText.match(AGENT_NAMES_PATTERN);
+      if (m) {
+        return AGENT_NAME_TO_ID[m[1]] || null;
+      }
+      // Only need the first user message
+      break;
+    }
+  } catch (e) {
+    // Ignore read errors (file may be locked or truncated)
+  } finally {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch (e) {}
+    }
+  }
+  return null;
+}
+
+/**
+ * Load main's sessions.json and return a map of agentId → best subagent session.
+ * "Best" = most recently updated subagent session for each agent.
+ * Results are cached for 5 seconds to avoid repeated disk reads during a single request burst.
+ */
+let _mainSessionsCache = null;
+let _mainSessionsCacheTime = 0;
+const MAIN_SESSIONS_CACHE_TTL_MS = 5000;
+
+function getMainSubagentSessions() {
+  const now = Date.now();
+  if (_mainSessionsCache && (now - _mainSessionsCacheTime) < MAIN_SESSIONS_CACHE_TTL_MS) {
+    return _mainSessionsCache;
+  }
+
+  const result = {}; // agentId → { session, key }
+  if (!fs.existsSync(MAIN_SESSIONS_FILE)) {
+    _mainSessionsCache = result;
+    _mainSessionsCacheTime = now;
+    return result;
+  }
+
+  let sessions;
+  try {
+    sessions = JSON.parse(fs.readFileSync(MAIN_SESSIONS_FILE, 'utf8'));
+  } catch (e) {
+    _mainSessionsCache = result;
+    _mainSessionsCacheTime = now;
+    return result;
+  }
+
+  for (const [key, session] of Object.entries(sessions)) {
+    if (!key.includes('subagent')) continue;
+    const sf = session.sessionFile;
+    if (!sf) continue;
+    const ownerAgentId = getSubagentOwner(sf);
+    if (!ownerAgentId) continue;
+    // Keep the most recently updated session per agent
+    if (!result[ownerAgentId] || session.updatedAt > result[ownerAgentId].session.updatedAt) {
+      result[ownerAgentId] = { session, key };
+    }
+  }
+
+  _mainSessionsCache = result;
+  _mainSessionsCacheTime = now;
+  return result;
+}
+
 // ─── Agent metadata ─────────────────────────────────────────────────────────
 
 const AGENT_META = {
@@ -505,6 +627,20 @@ function getAgentStatusV2(agentId) {
     }
   }
 
+  // ── Issue #75: Also check main's sessions.json for subagent sessions ────────
+  // Subagents spawned by main (e.g. "You are Linus") are stored under
+  // ~/.openclaw/agents/main/sessions/sessions.json, NOT the agent's own dir.
+  // If a subagent session is more recent than what we found above, prefer it.
+  if (agentId !== 'main') {
+    const mainSubagentSessions = getMainSubagentSessions();
+    const subagentEntry = mainSubagentSessions[agentId];
+    if (subagentEntry && subagentEntry.session.updatedAt > bestUpdatedAt) {
+      bestUpdatedAt = subagentEntry.session.updatedAt;
+      bestSession = subagentEntry.session;
+      bestKey = subagentEntry.key;
+    }
+  }
+
   if (!bestSession || !bestKey) return null;
 
   const now = Date.now();
@@ -596,11 +732,9 @@ function getAgentStatusV2(agentId) {
   }
 
   // ── Session duration ──────────────────────────────────────────────────────
-  let durationSeconds = 0;
-  if (parsed.sessionStartedAt) {
-    const startMs = new Date(parsed.sessionStartedAt).getTime();
-    durationSeconds = Math.max(0, Math.floor((lastActivityMs - startMs) / 1000));
-  }
+  // duration_seconds = time since last activity (not session age).
+  // An agent that last did something 2 minutes ago should show "2m", not "19h".
+  const durationSeconds = Math.max(0, Math.floor(activityAgeMs / 1000));
 
   // ── Sub-agents ────────────────────────────────────────────────────────────
   // Look for recently active subagent sessions
