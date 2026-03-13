@@ -232,7 +232,7 @@ struct AgentListView: View {
             }
             .padding(.vertical, 8)
         }
-        .frame(maxHeight: 540) // 640 - 56 (header) - 44 (footer) — v1.1 height fix
+        .frame(minHeight: 440, maxHeight: 540) // min forces panel to expand; max caps popover — fix #141
         .scrollIndicators(.hidden)
         // Mark first load complete as soon as gateway responds (#132)
         // Use lastHeartbeat as the signal — it's set on every successful fetch

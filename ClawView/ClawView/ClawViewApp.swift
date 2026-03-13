@@ -238,11 +238,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             panel.center()
         }
 
-        panel.contentViewController = NSHostingController(rootView: pinnedView)
-        // Fix #141: NSHostingController doesn't inherit the panel's contentRect size
-        // automatically — SwiftUI collapses or clips the ScrollView content without an
-        // explicit frame on the hosting view. Set it explicitly to match the panel size.
-        panel.contentViewController?.view.frame = NSRect(x: 0, y: 0, width: 320, height: 540)
+        let hostingController = NSHostingController(rootView: pinnedView)
+        // Fix #141: set preferredContentSize so NSHostingController tells SwiftUI exactly
+        // how much space it has. Without this the ScrollView sizes to its natural minimum
+        // (one card) and ignores the panel's contentRect entirely.
+        hostingController.preferredContentSize = NSSize(width: 320, height: 540)
+        panel.contentViewController = hostingController
+        hostingController.view.frame = NSRect(x: 0, y: 0, width: 320, height: 540)
 
         // When the panel is closed via the close button, unpin cleanly
         NotificationCenter.default.addObserver(
