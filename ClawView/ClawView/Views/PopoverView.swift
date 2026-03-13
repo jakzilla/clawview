@@ -28,7 +28,9 @@ struct PopoverView: View {
                 mainContent
             }
         }
-        .frame(width: 320)
+        // In panel mode, SwiftUI must own the height — NSPanel doesn't propose a size.
+        // In popover mode, the popover's contentSize owns the height — don't override it.
+        .frame(width: 320, height: isPinned ? 540 : nil)
     }
 
     @ViewBuilder
@@ -232,7 +234,7 @@ struct AgentListView: View {
             }
             .padding(.vertical, 8)
         }
-        .frame(minHeight: 440, maxHeight: 540) // min forces panel to expand; max caps popover — fix #141
+        .frame(maxHeight: 540)
         .scrollIndicators(.hidden)
         // Mark first load complete as soon as gateway responds (#132)
         // Use lastHeartbeat as the signal — it's set on every successful fetch
