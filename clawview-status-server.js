@@ -784,11 +784,15 @@ function getAgentStatusV2(agentId) {
   // Parse the session file for detailed activity
   const parsed = parseSessionFile(bestSession.sessionFile);
 
-  // Use the more recent of: session updatedAt vs parsed lastActivityMs
-  const lastActivityMs = Math.max(
-    bestUpdatedAt,
-    parsed.lastActivityMs || 0
-  );
+  // For idle timestamp accuracy (#142): prefer the last role:assistant message timestamp
+  // from the JSONL over session.updatedAt. The session file is touched by heartbeats,
+  // system events, and subagent writes — none of which represent meaningful agent work.
+  // parsed.lastActivityMs is set only when an actual assistant message is found in the
+  // JSONL, so it reflects when the agent last genuinely responded.
+  // Fall back to bestUpdatedAt only if the JSONL has no parseable assistant messages.
+  const lastActivityMs = parsed.lastActivityMs > 0
+    ? parsed.lastActivityMs
+    : bestUpdatedAt;
   const activityAgeMs = now - lastActivityMs;
 
   // ── Status determination ──────────────────────────────────────────────────
